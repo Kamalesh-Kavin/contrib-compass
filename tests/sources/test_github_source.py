@@ -8,6 +8,7 @@ Tests cover:
   - fetch_issues: parses API response into IssueResult list
   - fetch_repos: handles RateLimitError when X-RateLimit-Remaining == 0
   - _parse_repo: skips malformed items gracefully
+  - _get: retries without Authorization header when token returns 401
 """
 
 from __future__ import annotations
@@ -136,3 +137,42 @@ async def test_fetch_repos_empty_response(profile):
         repos = await source.fetch_repos(profile, limit=5)
 
     assert repos == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_retries_without_token_on_401():
+    """When a token produces a 401, _get should retry unauthenticated and succeed."""
+    # Profile WITH a token that the server rejects
+    bad_token_profile = UserProfile(
+        role="Engineer",
+        skills=["python"],
+        languages=["python"],
+        github_token="expired-token",
+    )
+
+    call_count = 0
+
+    def side_effect(request, route):
+        nonlocal call_count
+        call_count += 1
+        # First call (with Authorization header) → 401
+        if "Authorization" in request.headers:
+            return Response(401, json={"message": "Bad credentials"})
+        # Second call (without Authorization) → 200
+        return Response(
+            200,
+            json={"items": [_REPO_ITEM]},
+            headers={"X-RateLimit-Remaining": "10"},
+        )
+
+    respx.get("https://api.github.com/search/repositories").mock(side_effect=side_effect)
+
+    async with AsyncClient() as client:
+        source = GitHubSource(client=client)
+        repos = await source.fetch_repos(bad_token_profile, limit=5)
+
+    # Should have retried and succeeded
+    assert call_count == 2
+    assert len(repos) == 1
+    assert repos[0].full_name == "tiangolo/fastapi"

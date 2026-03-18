@@ -194,11 +194,24 @@
 
     </div>
 
-    <!-- GitHub token (optional) -->
-    <div>
+    <!-- GitHub token — recommended -->
+    <div class="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-4">
+      <div class="flex items-start gap-3 mb-3">
+        <svg class="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <div>
+          <p class="text-sm font-semibold text-yellow-300">GitHub token recommended</p>
+          <p class="text-xs text-yellow-400/80 mt-0.5">
+            Without a token the GitHub Search API allows only <strong>60 requests/hour</strong>.
+            Most analyses need 5–15 requests — you may hit the limit quickly if you run several searches.
+            With a token you get <strong>5,000 requests/hour</strong>.
+          </p>
+        </div>
+      </div>
       <label class="block text-sm font-medium text-gray-300 mb-1" for="github_token">
-        GitHub token
-        <span class="text-gray-500">(optional — raises rate limit from 60 to 5 000 req/hr)</span>
+        GitHub Personal Access Token
       </label>
       <input
         type="password"
@@ -206,14 +219,17 @@
         name="github_token"
         placeholder="ghp_…"
         autocomplete="off"
-        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+        class="w-full bg-gray-800 border border-yellow-700/50 rounded-lg px-3 py-2 text-sm
                text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
-               focus:ring-brand-500"
+               focus:ring-yellow-500"
       />
-      <p class="mt-1 text-xs text-gray-500">
-        Never stored — used only for this analysis.
-        <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer"
-           class="underline hover:text-gray-300">Create one here.</a>
+      <p class="mt-1.5 text-xs text-gray-500">
+        Token is never stored — used only for this analysis request.
+        <a href="https://github.com/settings/tokens/new?description=contrib-compass&scopes=public_repo"
+           target="_blank" rel="noopener noreferrer"
+           class="text-yellow-400 underline hover:text-yellow-300">
+          Create a free token (no scopes needed for public repos).
+        </a>
       </p>
     </div>
 

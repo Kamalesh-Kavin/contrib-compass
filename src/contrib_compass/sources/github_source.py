@@ -168,6 +168,11 @@ class GitHubSource:
     ) -> dict:
         """Make an authenticated GET request and return the parsed JSON body.
 
+        If the token produces a 401 Unauthorized response (expired / revoked),
+        the request is automatically retried without any Authorization header so
+        that at least the unauthenticated rate-limit tier is used instead of
+        failing completely.
+
         Args:
             url:    Full API URL.
             params: Query parameters dict.
@@ -178,18 +183,32 @@ class GitHubSource:
 
         Raises:
             RateLimitError: If ``X-RateLimit-Remaining`` is 0.
-            httpx.HTTPStatusError: On 4xx/5xx responses (other than 403).
+            httpx.HTTPStatusError: On 4xx/5xx responses (other than 401 with
+                a token, which triggers an unauthenticated retry).
         """
-        headers = {
+        base_headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
 
         client = self._client or httpx.AsyncClient(timeout=15.0)
         try:
+            # --- First attempt (with token if available) -------------------
+            headers = dict(base_headers)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
             response = await client.get(url, params=params, headers=headers)
+
+            # If the token is invalid/expired, retry without it so the
+            # unauthenticated rate-limit (60 req/hr) is used as a fallback
+            # rather than surfacing a confusing 401 error to the user.
+            if response.status_code == 401 and token:
+                logger.warning(
+                    "GitHub token returned 401 — token may be expired or "
+                    "revoked. Retrying without Authorization header."
+                )
+                response = await client.get(url, params=params, headers=base_headers)
 
             # Check rate limit before raising on status
             remaining = int(response.headers.get("X-RateLimit-Remaining", "1"))
