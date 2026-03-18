@@ -124,15 +124,67 @@ _LANGUAGES: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 _STOP_WORDS: frozenset[str] = frozenset(
     {
-        "and", "or", "the", "a", "an", "in", "on", "at", "to", "for",
-        "of", "with", "by", "from", "as", "is", "was", "are", "were",
-        "be", "been", "being", "have", "has", "had", "do", "does", "did",
-        "will", "would", "could", "should", "may", "might", "can",
-        "experience", "years", "year", "strong", "good", "excellent",
-        "knowledge", "proficient", "familiar", "familiarity", "working",
-        "using", "use", "used", "built", "build", "develop", "developed",
-        "design", "implement", "implemented", "various", "including",
-        "including", "etc", "like", "such",
+        "and",
+        "or",
+        "the",
+        "a",
+        "an",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "is",
+        "was",
+        "are",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "experience",
+        "years",
+        "year",
+        "strong",
+        "good",
+        "excellent",
+        "knowledge",
+        "proficient",
+        "familiar",
+        "familiarity",
+        "working",
+        "using",
+        "use",
+        "used",
+        "built",
+        "build",
+        "develop",
+        "developed",
+        "design",
+        "implement",
+        "implemented",
+        "various",
+        "including",
+        "etc",
+        "like",
+        "such",
     }
 )
 
@@ -141,7 +193,11 @@ _SEPARATORS = re.compile(r"[,\n\r|/•·\t]+")
 # Secondary word-level tokeniser for free-form sentences
 _WORDS = re.compile(r"[a-z][a-z0-9+#.\-]*", re.IGNORECASE)
 # Strip leading/trailing punctuation and whitespace from a token
-_TRIM = re.compile(r"^[\s\-–—•·*()[\]{}<>\"']+|[\s\-–—•·*()[\]{}<>\"']+$")
+# Includes: whitespace, hyphens, en-dash, em-dash, bullets, and bracket chars.
+_TRIM = re.compile(
+    r"^[\s\-\u2013\u2014\u2022\u00b7*()[\]{}<>\"']+"
+    r"|[\s\-\u2013\u2014\u2022\u00b7*()[\]{}<>\"']+$"
+)
 
 
 def normalise(raw_text: str) -> tuple[list[str], list[str]]:

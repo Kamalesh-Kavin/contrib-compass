@@ -10,16 +10,14 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from contrib_compass.difficulty.classifier import classify_issue
 from contrib_compass.models import Difficulty
 
 
 def _dt(days_ago: int) -> datetime:
-    return datetime.now(tz=timezone.utc) - timedelta(days=days_ago)
+    return datetime.now(tz=UTC) - timedelta(days=days_ago)
 
 
 def test_good_first_issue_label_is_beginner():
@@ -36,7 +34,7 @@ def test_good_first_issue_label_is_beginner():
 
 def test_help_wanted_only_is_intermediate():
     """'help wanted' without a beginner label → INTERMEDIATE."""
-    difficulty, reason = classify_issue(
+    difficulty, _reason = classify_issue(
         labels=["help wanted"],
         comment_count=2,
         created_at=_dt(30),
@@ -47,7 +45,7 @@ def test_help_wanted_only_is_intermediate():
 
 def test_high_comment_count_is_advanced():
     """An issue with many comments and no beginner label → ADVANCED or INTERMEDIATE."""
-    difficulty, reason = classify_issue(
+    difficulty, _reason = classify_issue(
         labels=["bug"],
         comment_count=50,
         created_at=_dt(180),
@@ -58,7 +56,7 @@ def test_high_comment_count_is_advanced():
 
 def test_no_labels_returns_intermediate():
     """An issue with no labels at all should fall back to INTERMEDIATE."""
-    difficulty, reason = classify_issue(
+    difficulty, _reason = classify_issue(
         labels=[],
         comment_count=1,
         created_at=_dt(5),

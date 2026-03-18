@@ -10,10 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-
 from contrib_compass.matching.keyword_matcher import score_issue, score_repo
-
 
 # ---------------------------------------------------------------------------
 # score_repo
@@ -73,7 +70,7 @@ def test_score_repo_empty_skills_returns_zero():
 
 def test_score_repo_none_description_does_not_crash():
     """None description should be handled gracefully."""
-    score, matched = score_repo(
+    score, _matched = score_repo(
         skills=["python"],
         description=None,
         topics=["python"],
@@ -101,7 +98,7 @@ def test_score_issue_title_match():
 
 def test_score_issue_label_match():
     """Skills matching issue labels should contribute to the score."""
-    score, matched = score_issue(
+    score, _matched = score_issue(
         skills=["typescript", "testing"],
         title="Fix a minor typo",
         labels=["typescript", "good first issue"],

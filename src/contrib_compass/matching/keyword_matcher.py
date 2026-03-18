@@ -80,7 +80,9 @@ def score_issue(
         A tuple ``(score, matched_skills)``.
 
     Example:
-        >>> score_issue(["python", "fastapi"], "Add FastAPI middleware support", [], "tiangolo/fastapi")
+        >>> score_issue(
+        ...     ["python", "fastapi"], "Add FastAPI middleware support", [], "tiangolo/fastapi"
+        ... )
         (0.5, ['fastapi'])
     """
     if not skills:

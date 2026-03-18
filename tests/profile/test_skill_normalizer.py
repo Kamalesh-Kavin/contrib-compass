@@ -11,8 +11,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-
 from contrib_compass.profile.skill_normalizer import normalise
 
 
@@ -63,7 +61,7 @@ def test_normalise_extracts_languages_subset():
 def test_normalise_comma_separated_string():
     """Comma-separated input (from manual form) should work correctly."""
     text = "Python, FastAPI, PostgreSQL, Docker"
-    skills, languages = normalise(text)
+    skills, _languages = normalise(text)
     assert "python" in skills
     assert "fastapi" in skills
     assert "postgresql" in skills

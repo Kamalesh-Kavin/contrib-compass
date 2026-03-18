@@ -31,8 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from contrib_compass.models import AnalysisResult, AnalysisStatus
 
@@ -77,7 +76,7 @@ class SessionStore:
             A fresh UUID4 string (e.g. "a1b2c3d4-...").
         """
         session_id = str(uuid.uuid4())
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         # Create a minimal placeholder result so get() never returns None for
         # a freshly created session.
         placeholder = AnalysisResult(
@@ -90,7 +89,7 @@ class SessionStore:
         logger.debug("New session created: %s", session_id)
         return session_id
 
-    async def get(self, session_id: str) -> Optional[AnalysisResult]:
+    async def get(self, session_id: str) -> AnalysisResult | None:
         """Return the AnalysisResult for a session, or None if not found.
 
         Args:
@@ -113,7 +112,7 @@ class SessionStore:
         """
         async with self._lock:
             self._store[session_id] = result
-            self._created_at.setdefault(session_id, datetime.now(tz=timezone.utc))
+            self._created_at.setdefault(session_id, datetime.now(tz=UTC))
             self._evict_expired()
 
     async def set_running(self, session_id: str) -> None:
@@ -136,7 +135,7 @@ class SessionStore:
 
         Must be called while the lock is already held.
         """
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         expired = [
             sid
             for sid, created in self._created_at.items()

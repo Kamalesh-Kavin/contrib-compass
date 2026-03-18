@@ -13,7 +13,6 @@ import pytest
 
 from contrib_compass.profile.docx_parser import DOCXParseError, extract_text
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

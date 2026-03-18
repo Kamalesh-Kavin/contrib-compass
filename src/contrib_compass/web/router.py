@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -37,7 +37,7 @@ from fastapi.templating import Jinja2Templates
 from contrib_compass.config import get_settings
 from contrib_compass.enrichment.repo_enricher import enrich_repos
 from contrib_compass.matching.scorer import rank_issues, rank_repos
-from contrib_compass.models import AnalysisResult, AnalysisStatus
+from contrib_compass.models import AnalysisResult, AnalysisStatus, UserProfile
 from contrib_compass.profile.extractor import (
     UnsupportedFileTypeError,
     build_profile_from_file,
@@ -101,12 +101,12 @@ async def analyze(
     request: Request,
     background_tasks: BackgroundTasks,
     # ── Form fields ────────────────────────────────────────────────
-    input_mode: str = Form(...),          # "upload" | "manual"
+    input_mode: str = Form(...),  # "upload" | "manual"
     role: str = Form(...),
     experience_years: int = Form(default=0),
     github_token: str = Form(default=""),
     # Upload-mode fields
-    resume: UploadFile | None = File(default=None),
+    resume: UploadFile | None = File(default=None),  # noqa: B008
     # Manual-mode fields
     skills_raw: str = Form(default=""),
     languages_raw: str = Form(default=""),
@@ -158,8 +158,10 @@ async def analyze(
             )
     except UnsupportedFileTypeError as exc:
         # Return to index with an error flash message
-        return templates.TemplateResponse(request, "index.html", {"error": str(exc)}, status_code=400)
-    except Exception as exc:  # noqa: BLE001
+        return templates.TemplateResponse(
+            request, "index.html", {"error": str(exc)}, status_code=400
+        )
+    except Exception as exc:
         logger.exception("Profile extraction failed: %s", exc)
         return templates.TemplateResponse(
             request, "index.html", {"error": f"Could not parse your resume: {exc}"}, status_code=400
@@ -209,7 +211,9 @@ async def status(session_id: str) -> JSONResponse:
     """
     result = await session_store.get(session_id)
     if result is None:
-        return JSONResponse({"status": "error", "error_message": "Session not found."}, status_code=404)
+        return JSONResponse(
+            {"status": "error", "error_message": "Session not found."}, status_code=404
+        )
 
     payload: dict = {"status": result.status.value}
     if result.status == AnalysisStatus.ERROR and result.error:
@@ -250,12 +254,8 @@ async def results(request: Request, session_id: str) -> HTMLResponse:
         )
 
     # ── Collect distinct languages and difficulties for filter chips ───────
-    languages: list[str] = sorted(
-        {r.language for r in result.repos if r.language}
-    )
-    difficulties: list[str] = sorted(
-        {i.difficulty.value for i in result.issues}
-    )
+    languages: list[str] = sorted({r.language for r in result.repos if r.language})
+    difficulties: list[str] = sorted({i.difficulty.value for i in result.issues})
 
     return templates.TemplateResponse(
         request,
@@ -275,8 +275,8 @@ async def results(request: Request, session_id: str) -> HTMLResponse:
 
 async def _run_analysis(
     session_id: str,
-    profile,  # UserProfile
-    model,    # SentenceTransformer | None
+    profile: UserProfile,
+    model: object,  # SentenceTransformer | None — avoid hard dep at import time
 ) -> None:
     """Execute the full analysis pipeline in a background task.
 
@@ -325,7 +325,7 @@ async def _run_analysis(
             # ── Step 4: Up For Grabs repos ─────────────────────────────────
             try:
                 ufg_repos = await upforgrabs.fetch_repos(profile, limit=settings.max_repos)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("Up For Grabs fetch failed: %s", exc)
                 ufg_repos = []
 
@@ -355,7 +355,7 @@ async def _run_analysis(
             profile=profile,
             repos=enriched_repos,
             issues=ranked_issues,
-            completed_at=datetime.now(tz=timezone.utc),
+            completed_at=datetime.now(tz=UTC),
             rate_limit_warning=rate_limit_warning,
         )
         await session_store.set(session_id, finished)
@@ -366,7 +366,7 @@ async def _run_analysis(
             len(ranked_issues),
         )
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Analysis failed for session %s: %s", session_id, exc)
         logger.debug(traceback.format_exc())
         error_result = AnalysisResult(
@@ -374,6 +374,6 @@ async def _run_analysis(
             status=AnalysisStatus.ERROR,
             profile=profile,
             error=str(exc),
-            completed_at=datetime.now(tz=timezone.utc),
+            completed_at=datetime.now(tz=UTC),
         )
         await session_store.set(session_id, error_result)

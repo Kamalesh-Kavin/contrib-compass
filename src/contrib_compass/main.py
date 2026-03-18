@@ -25,12 +25,10 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from contrib_compass.config import get_settings
 
@@ -51,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan context manager.
 
     Runs on startup:
@@ -90,10 +88,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         app.state.model = model
         logger.info("Model loaded successfully.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
-            "Failed to load sentence-transformers model: %s. "
-            "Falling back to keyword-only scoring.",
+            "Failed to load sentence-transformers model: %s. Falling back to keyword-only scoring.",
             exc,
         )
         app.state.model = None
@@ -136,11 +133,15 @@ def create_app() -> FastAPI:
 
     # ── Mount web router ───────────────────────────────────────────────────
     # Import here to avoid circular imports at module load time.
-    from contrib_compass.web.router import router  # noqa: PLC0415
+    from contrib_compass.web.router import router
 
     application.include_router(router)
 
-    logger.debug("FastAPI app created (max_repos=%d, max_issues=%d)", settings.max_repos, settings.max_issues)
+    logger.debug(
+        "FastAPI app created (max_repos=%d, max_issues=%d)",
+        settings.max_repos,
+        settings.max_issues,
+    )
     return application
 
 

@@ -13,7 +13,7 @@ We pass model=None so no sentence-transformers is needed in tests.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -54,7 +54,7 @@ def repos() -> list[RepoResult]:
 
 @pytest.fixture
 def issues() -> list[IssueResult]:
-    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
     return [
         IssueResult(
             number=1,
@@ -133,6 +133,6 @@ def test_rank_issues_empty_input(profile):
 def test_rank_issues_deduplicates_by_url(profile, issues):
     """Duplicate issues (same html_url) should only appear once."""
     duplicate = issues[0]
-    ranked = rank_issues(issues + [duplicate], profile, model=None)
+    ranked = rank_issues([*issues, duplicate], profile, model=None)
     urls = [i.html_url for i in ranked]
     assert len(urls) == len(set(urls))

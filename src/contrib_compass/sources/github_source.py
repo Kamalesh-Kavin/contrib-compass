@@ -27,7 +27,7 @@ API docs:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 
@@ -261,8 +261,8 @@ def _build_issue_query(profile: UserProfile, label: str) -> str:
         Query string for the GitHub Search Issues API.
     """
     parts: list[str] = [
-        'type:issue',
-        'state:open',
+        "type:issue",
+        "state:open",
         f'label:"{label}"',
     ]
 
@@ -326,12 +326,8 @@ def _parse_issue(item: dict) -> IssueResult | None:
         repo_full_name = "/".join(repo_url.split("/")[-2:]) if repo_url else "unknown/unknown"
         repo_html_url = f"https://github.com/{repo_full_name}"
 
-        created_at = datetime.fromisoformat(
-            item["created_at"].replace("Z", "+00:00")
-        )
-        updated_at = datetime.fromisoformat(
-            item["updated_at"].replace("Z", "+00:00")
-        )
+        created_at = datetime.fromisoformat(item["created_at"].replace("Z", "+00:00"))
+        updated_at = datetime.fromisoformat(item["updated_at"].replace("Z", "+00:00"))
 
         body = item.get("body") or ""
         body_preview = body[:300] if body else None

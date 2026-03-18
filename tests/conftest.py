@@ -13,19 +13,17 @@ Key fixtures:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from contrib_compass.models import (
-    AnalysisStatus,
     ContributionTip,
     Difficulty,
     IssueResult,
     RepoResult,
     UserProfile,
 )
-
 
 # ---------------------------------------------------------------------------
 # Profile fixtures
@@ -74,7 +72,7 @@ def sample_repo() -> RepoResult:
         stars=75000,
         forks=6000,
         open_issues=200,
-        last_pushed_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        last_pushed_at=datetime(2026, 3, 1, tzinfo=UTC),
         keyword_score=0.8,
         semantic_score=0.9,
         final_score=0.86,
@@ -106,8 +104,8 @@ def sample_issue() -> IssueResult:
         repo_html_url="https://github.com/tiangolo/fastapi",
         labels=["good first issue", "documentation"],
         comment_count=3,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        updated_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 2, 1, tzinfo=UTC),
         difficulty=Difficulty.BEGINNER,
         difficulty_reason="Has 'good first issue' label",
         body_preview="We should add more examples for async endpoints in the docs.",

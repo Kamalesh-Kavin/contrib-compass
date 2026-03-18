@@ -13,7 +13,7 @@ Model:
     Default: ``all-MiniLM-L6-v2``
     - ~80 MB
     - 384-dimensional embeddings
-    - ~1–5ms per short string on CPU
+    - ~1-5ms per short string on CPU
     - Best for symmetric short-text similarity tasks
 
 Why semantic re-ranking?
@@ -38,13 +38,14 @@ logger = logging.getLogger(__name__)
 # (it takes ~2s to import and would slow all tests that don't need it)
 try:
     from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+
     _ST_AVAILABLE = True
 except ImportError:
     _ST_AVAILABLE = False
     SentenceTransformer = None  # type: ignore[assignment, misc]
 
 
-def load_model(model_name: str, cache_dir: str) -> "SentenceTransformer":
+def load_model(model_name: str, cache_dir: str) -> SentenceTransformer:
     """Load a sentence-transformers model, caching it to ``cache_dir``.
 
     Called once during FastAPI's lifespan startup — NOT per request.
@@ -68,11 +69,11 @@ def load_model(model_name: str, cache_dir: str) -> "SentenceTransformer":
     """
     if not _ST_AVAILABLE:
         raise ImportError(
-            "sentence-transformers is not installed. "
-            "Run: uv pip install sentence-transformers"
+            "sentence-transformers is not installed. Run: uv pip install sentence-transformers"
         )
 
     import os
+
     os.environ["SENTENCE_TRANSFORMERS_HOME"] = cache_dir
 
     logger.info("Loading sentence-transformers model '%s' from cache '%s'", model_name, cache_dir)
@@ -82,7 +83,7 @@ def load_model(model_name: str, cache_dir: str) -> "SentenceTransformer":
 
 
 def score_texts(
-    model: "SentenceTransformer",
+    model: SentenceTransformer,
     query: str,
     targets: list[str],
 ) -> list[float]:
@@ -114,12 +115,12 @@ def score_texts(
         return [0.0] * len(targets)
 
     try:
-        all_texts = [query] + targets
+        all_texts = [query, *targets]
         # encode() returns a numpy array of shape (N, embedding_dim)
         embeddings = model.encode(all_texts, convert_to_numpy=True, show_progress_bar=False)
 
-        query_emb = embeddings[0]             # shape: (dim,)
-        target_embs = embeddings[1:]          # shape: (N, dim)
+        query_emb = embeddings[0]  # shape: (dim,)
+        target_embs = embeddings[1:]  # shape: (N, dim)
 
         # Cosine similarity: dot product of L2-normalised vectors
         query_norm = query_emb / (np.linalg.norm(query_emb) + 1e-10)
@@ -129,7 +130,7 @@ def score_texts(
         # Clip to [0, 1] — cosine can theoretically be negative for very different texts
         return [max(0.0, min(1.0, float(s))) for s in similarities]
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Semantic scoring failed: %s — returning zero scores", exc)
         return [0.0] * len(targets)
 

@@ -33,7 +33,7 @@ from contrib_compass.models import ContributionTip, RepoResult
 logger = logging.getLogger(__name__)
 
 _GITHUB_API = "https://api.github.com"
-_ENRICH_LIMIT = 10   # only enrich top N repos
+_ENRICH_LIMIT = 10  # only enrich top N repos
 
 
 async def enrich_repos(
@@ -92,72 +92,84 @@ async def _build_tips(
     headers = _make_headers(token)
 
     # ── Tip 1: CONTRIBUTING.md ──────────────────────────────────────────
-    has_contributing = await _check_file_exists(
-        repo.full_name, "CONTRIBUTING.md", headers, client
-    )
+    has_contributing = await _check_file_exists(repo.full_name, "CONTRIBUTING.md", headers, client)
     if has_contributing:
-        tips.append(ContributionTip(
-            icon="📖",
-            message="Has CONTRIBUTING.md",
-            positive=True,
-        ))
+        tips.append(
+            ContributionTip(
+                icon="📖",
+                message="Has CONTRIBUTING.md",
+                positive=True,
+            )
+        )
     else:
-        tips.append(ContributionTip(
-            icon="⚠️",
-            message="No CONTRIBUTING.md",
-            positive=False,
-        ))
+        tips.append(
+            ContributionTip(
+                icon="⚠️",
+                message="No CONTRIBUTING.md",
+                positive=False,
+            )
+        )
 
     # ── Tip 2: Activity (from last_pushed_at on the repo) ───────────────
     days_ago = repo.last_pushed_days_ago
     if days_ago is not None:
         if days_ago <= 7:
-            tips.append(ContributionTip(
-                icon="🔥",
-                message=f"Very active — pushed {days_ago}d ago",
-                positive=True,
-            ))
+            tips.append(
+                ContributionTip(
+                    icon="🔥",
+                    message=f"Very active — pushed {days_ago}d ago",
+                    positive=True,
+                )
+            )
         elif days_ago <= 30:
-            tips.append(ContributionTip(
-                icon="✅",
-                message=f"Active — pushed {days_ago}d ago",
-                positive=True,
-            ))
+            tips.append(
+                ContributionTip(
+                    icon="✅",
+                    message=f"Active — pushed {days_ago}d ago",
+                    positive=True,
+                )
+            )
         elif days_ago <= 180:
-            tips.append(ContributionTip(
-                icon="🕐",
-                message=f"Last push {days_ago}d ago",
-                positive=True,
-            ))
+            tips.append(
+                ContributionTip(
+                    icon="🕐",
+                    message=f"Last push {days_ago}d ago",
+                    positive=True,
+                )
+            )
         else:
-            tips.append(ContributionTip(
-                icon="🐢",
-                message=f"Slow — last push {days_ago}d ago",
-                positive=False,
-            ))
+            tips.append(
+                ContributionTip(
+                    icon="🐢",
+                    message=f"Slow — last push {days_ago}d ago",
+                    positive=False,
+                )
+            )
 
     # ── Tip 3: Open issues count ─────────────────────────────────────────
     if repo.open_issues > 0:
-        tips.append(ContributionTip(
-            icon="🐛",
-            message=f"{repo.open_issues:,} open issues",
-            positive=True,
-        ))
+        tips.append(
+            ContributionTip(
+                icon="🐛",
+                message=f"{repo.open_issues:,} open issues",
+                positive=True,
+            )
+        )
 
     # ── Tip 4: Archived ──────────────────────────────────────────────────
     # (archived flag is not in RepoResult currently — handled by filtering
     #  it out in github_source before it reaches enrichment)
 
     # ── Tip 5: Code of Conduct ───────────────────────────────────────────
-    has_coc = await _check_file_exists(
-        repo.full_name, "CODE_OF_CONDUCT.md", headers, client
-    )
+    has_coc = await _check_file_exists(repo.full_name, "CODE_OF_CONDUCT.md", headers, client)
     if has_coc:
-        tips.append(ContributionTip(
-            icon="🤝",
-            message="Has Code of Conduct",
-            positive=True,
-        ))
+        tips.append(
+            ContributionTip(
+                icon="🤝",
+                message="Has Code of Conduct",
+                positive=True,
+            )
+        )
 
     return tips
 

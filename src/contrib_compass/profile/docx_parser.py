@@ -18,7 +18,6 @@ import io
 import logging
 
 from docx import Document  # type: ignore[import-untyped]
-from docx.oxml.ns import qn  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 

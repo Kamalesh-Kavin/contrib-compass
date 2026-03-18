@@ -15,8 +15,8 @@ Algorithm (signal → weight):
        - "help wanted" alone → Intermediate
        - "bug", "performance", "security", "refactor" → push toward Advanced
     2. Comment count — social activity proxy
-       - 0–2 → leans Beginner
-       - 3–8 → Intermediate
+       - 0-2 → leans Beginner
+       - 3-8 → Intermediate
        - 9+  → Advanced (heavily discussed = complex)
     3. Issue age (days open)
        - > 90 days → possibly difficult (nobody has tackled it)
@@ -30,7 +30,7 @@ bucket that accumulates the highest score.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from contrib_compass.models import Difficulty
 
@@ -155,8 +155,8 @@ def classify_issue(
         reasons.append(f"{comment_count} comments (actively discussed)")
 
     # ── Signal 3: Issue age ──────────────────────────────────────────────
-    now = datetime.now(tz=timezone.utc)
-    ca = created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(tz=UTC)
+    ca = created_at if created_at.tzinfo else created_at.replace(tzinfo=UTC)
     age_days = (now - ca).days
 
     if age_days > 90:

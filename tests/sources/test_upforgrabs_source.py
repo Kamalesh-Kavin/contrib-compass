@@ -11,16 +11,10 @@ Tests cover:
 
 from __future__ import annotations
 
-import base64
-
-import pytest
-import yaml
-
 from contrib_compass.sources.upforgrabs_source import (
     _extract_owner_repo,
     _filter_by_skills,
 )
-
 
 # ---------------------------------------------------------------------------
 # _extract_owner_repo

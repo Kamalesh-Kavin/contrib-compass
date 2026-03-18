@@ -18,7 +18,6 @@ import pytest
 
 from contrib_compass.profile.pdf_parser import PDFParseError, extract_text
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

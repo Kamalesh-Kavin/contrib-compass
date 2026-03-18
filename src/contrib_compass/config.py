@@ -116,7 +116,7 @@ def get_settings() -> Settings:
         >>> cfg.max_repos
         20
     """
-    global _settings  # noqa: PLW0603
+    global _settings
     if _settings is None:
         _settings = Settings()
     return _settings

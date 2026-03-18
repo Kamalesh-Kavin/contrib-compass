@@ -64,7 +64,7 @@ def extract_text(pdf_bytes: bytes) -> str:
             text = page.get_text()  # type: ignore[attr-defined]
             if text.strip():
                 pages_text.append(text)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("Skipping unreadable page %d in PDF", page_num)
 
     doc.close()

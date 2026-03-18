@@ -21,18 +21,17 @@ Design notes:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
-
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 
 
-class Difficulty(str, Enum):
+class Difficulty(StrEnum):
     """Estimated difficulty level for an open source issue."""
 
     BEGINNER = "Beginner"
@@ -40,13 +39,13 @@ class Difficulty(str, Enum):
     ADVANCED = "Advanced"
 
 
-class AnalysisStatus(str, Enum):
+class AnalysisStatus(StrEnum):
     """Lifecycle state of a background analysis task."""
 
-    PENDING = "pending"      # task queued but not started
-    RUNNING = "running"      # task executing
-    DONE = "done"            # task completed successfully
-    ERROR = "error"          # task failed
+    PENDING = "pending"  # task queued but not started
+    RUNNING = "running"  # task executing
+    DONE = "done"  # task completed successfully
+    ERROR = "error"  # task failed
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +134,9 @@ class RepoResult(BaseModel, frozen=True):
         forks:           Fork count at time of analysis.
         open_issues:     Number of open issues at time of analysis.
         last_pushed_at:  UTC datetime of the last push.
-        keyword_score:   Raw keyword-overlap score (0.0 – 1.0).
-        semantic_score:  Cosine similarity score from sentence-transformers (0.0 – 1.0).
-        final_score:     Weighted combination of keyword + semantic scores (0.0 – 1.0).
+        keyword_score:   Raw keyword-overlap score (0.0 - 1.0).
+        semantic_score:  Cosine similarity score from sentence-transformers (0.0 - 1.0).
+        final_score:     Weighted combination of keyword + semantic scores (0.0 - 1.0).
         tips:            Enrichment tips (CONTRIBUTING.md, activity, etc.).
         matched_skills:  Which user skills contributed to the match (for UI display).
     """
@@ -162,11 +161,11 @@ class RepoResult(BaseModel, frozen=True):
         """Days since the last push, or None if unknown."""
         if self.last_pushed_at is None:
             return None
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         # Ensure last_pushed_at is timezone-aware
         lp = self.last_pushed_at
         if lp.tzinfo is None:
-            lp = lp.replace(tzinfo=timezone.utc)
+            lp = lp.replace(tzinfo=UTC)
         return (now - lp).days
 
 
@@ -206,10 +205,10 @@ class IssueResult(BaseModel, frozen=True):
     @property
     def age_days(self) -> int:
         """Days since the issue was opened."""
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         ca = self.created_at
         if ca.tzinfo is None:
-            ca = ca.replace(tzinfo=timezone.utc)
+            ca = ca.replace(tzinfo=UTC)
         return (now - ca).days
 
 
@@ -239,6 +238,6 @@ class AnalysisResult(BaseModel, frozen=True):
     repos: list[RepoResult] = Field(default_factory=list)
     issues: list[IssueResult] = Field(default_factory=list)
     error: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     completed_at: datetime | None = None
     rate_limit_warning: bool = False

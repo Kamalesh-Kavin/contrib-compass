@@ -43,11 +43,8 @@ import logging
 import httpx
 import yaml
 
-from contrib_compass.config import get_settings
-from contrib_compass.difficulty.classifier import classify_issue
 from contrib_compass.models import IssueResult, RepoResult, UserProfile
 from contrib_compass.sources.github_source import (
-    RateLimitError,
     _parse_repo,
     _resolve_token,
 )
@@ -55,8 +52,7 @@ from contrib_compass.sources.github_source import (
 logger = logging.getLogger(__name__)
 
 _UFG_CONTENTS_API = (
-    "https://api.github.com/repos/up-for-grabs/up-for-grabs.net"
-    "/contents/_data/projects"
+    "https://api.github.com/repos/up-for-grabs/up-for-grabs.net/contents/_data/projects"
 )
 _GITHUB_API = "https://api.github.com"
 
@@ -178,7 +174,7 @@ class UpForGrabsSource:
                 project = yaml.safe_load(content)
                 if isinstance(project, dict):
                     projects.append(project)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug("Skipping UFG project file %s: %s", entry.get("name"), exc)
 
         return projects
@@ -264,6 +260,7 @@ class UpForGrabsSource:
             # Repo issues API doesn't include repository_url in the same format
             item.setdefault("repository_url", f"{_GITHUB_API}/repos/{owner_repo}")
             from contrib_compass.sources.github_source import _parse_issue
+
             issue = _parse_issue(item)
             if issue:
                 results.append(issue)

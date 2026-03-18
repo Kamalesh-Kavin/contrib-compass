@@ -79,14 +79,14 @@ def rank_repos(
         matched_skills_list.append(matched)
 
     # ── Step 2: Semantic scores (batched) ──────────────────────────────────
-    target_texts = [
-        _repo_to_text(repo) for repo in repos
-    ]
+    target_texts = [_repo_to_text(repo) for repo in repos]
     sem_scores = semantic_matcher.score_texts(model, query, target_texts)
 
     # ── Step 3 & 4: Combine and sort ──────────────────────────────────────
     scored: list[RepoResult] = []
-    for repo, kw, sem, matched in zip(repos, kw_scores, sem_scores, matched_skills_list):
+    for repo, kw, sem, matched in zip(
+        repos, kw_scores, sem_scores, matched_skills_list, strict=False
+    ):
         final = round(KEYWORD_WEIGHT * kw + SEMANTIC_WEIGHT * sem, 4)
         scored.append(
             RepoResult(
@@ -101,7 +101,9 @@ def rank_repos(
         )
 
     scored.sort(key=lambda r: r.final_score, reverse=True)
-    logger.debug("Ranked %d repos; top score=%.3f", len(scored), scored[0].final_score if scored else 0)
+    logger.debug(
+        "Ranked %d repos; top score=%.3f", len(scored), scored[0].final_score if scored else 0
+    )
     return scored
 
 
@@ -150,14 +152,15 @@ def rank_issues(
 
     # ── Semantic scores ────────────────────────────────────────────────────
     target_texts = [
-        f"{issue.title} {issue.repo_full_name} {' '.join(issue.labels)}"
-        for issue in unique
+        f"{issue.title} {issue.repo_full_name} {' '.join(issue.labels)}" for issue in unique
     ]
     sem_scores = semantic_matcher.score_texts(model, query, target_texts)
 
     # ── Combine and sort ───────────────────────────────────────────────────
     scored: list[tuple[float, IssueResult]] = []
-    for issue, kw, sem, matched in zip(unique, kw_scores, sem_scores, matched_skills_list):
+    for issue, kw, sem, matched in zip(
+        unique, kw_scores, sem_scores, matched_skills_list, strict=False
+    ):
         final = round(KEYWORD_WEIGHT * kw + SEMANTIC_WEIGHT * sem, 4)
         updated = IssueResult(**{**issue.model_dump(), "matched_skills": matched})
         scored.append((final, updated))
