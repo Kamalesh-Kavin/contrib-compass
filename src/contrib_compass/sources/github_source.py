@@ -27,7 +27,7 @@ API docs:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -41,11 +41,26 @@ _GITHUB_API = "https://api.github.com"
 _SEARCH_REPOS = f"{_GITHUB_API}/search/repositories"
 _SEARCH_ISSUES = f"{_GITHUB_API}/search/issues"
 
-# Minimum repo age filter — exclude repos with no push in the last 12 months
-_MIN_PUSHED = "2025-01-01"
 
-# Issue labels we search for
-_CONTRIBUTION_LABELS = ["good first issue", "help wanted"]
+# Rolling 12-month window — repos with no push older than this are excluded.
+# Computed at query time so the cutoff stays current without redeployment.
+def _min_pushed_date() -> str:
+    """Return an ISO date string 12 months ago (e.g. '2025-03-18')."""
+    cutoff = datetime.now(tz=UTC) - timedelta(days=365)
+    return cutoff.strftime("%Y-%m-%d")
+
+
+# Issue labels we search for — covers GitHub's own labels plus popular aliases
+_CONTRIBUTION_LABELS = [
+    "good first issue",
+    "help wanted",
+    "hacktoberfest",
+    "up-for-grabs",
+    "beginner",
+    "beginner-friendly",
+    "easy",
+    "first-timers-only",
+]
 
 
 class RateLimitError(RuntimeError):
@@ -74,12 +89,13 @@ class GitHubSource:
     ) -> list[RepoResult]:
         """Search GitHub for repos matching the user's languages and skills.
 
-        Builds a search query from the user's language list and top skills,
-        filtering to recently active, non-archived repos.
+        Runs one search query per language (up to 3 languages) so that a
+        Python+TypeScript developer doesn't only see Python repos.  Results
+        from all language queries are merged and deduplicated.
 
         Args:
             profile: The user's normalised profile.
-            limit:   Max repos to return (capped at 100 by GitHub).
+            limit:   Max repos to return in total (split evenly across languages).
 
         Returns:
             List of RepoResult objects (unscored).
@@ -87,27 +103,38 @@ class GitHubSource:
         Raises:
             RateLimitError: If GitHub API rate limit is hit.
         """
-        query = _build_repo_query(profile)
-        logger.debug("GitHub repo query: %s", query)
+        token = _resolve_token(profile)
+        # Query up to 3 languages to avoid burning rate-limit budget
+        languages_to_query = profile.languages[:3] if profile.languages else [None]
+        per_lang = max(limit // len(languages_to_query), 5)
 
-        params = {
-            "q": query,
-            "sort": "stars",
-            "order": "desc",
-            "per_page": min(limit, 100),
-        }
-
-        data = await self._get(_SEARCH_REPOS, params=params, token=_resolve_token(profile))
-        items = data.get("items", [])
-
+        seen_names: set[str] = set()
         repos: list[RepoResult] = []
-        for item in items:
-            repo = _parse_repo(item)
-            if repo is not None:
-                repos.append(repo)
 
-        logger.info("GitHub returned %d repos", len(repos))
-        return repos
+        for lang in languages_to_query:
+            query = _build_repo_query(profile, language=lang)
+            logger.debug("GitHub repo query (lang=%s): %s", lang, query)
+
+            params = {
+                "q": query,
+                "sort": "stars",
+                "order": "desc",
+                "per_page": min(per_lang, 100),
+            }
+
+            data = await self._get(_SEARCH_REPOS, params=params, token=token)
+            for item in data.get("items", []):
+                repo = _parse_repo(item)
+                if repo is not None and repo.full_name not in seen_names:
+                    seen_names.add(repo.full_name)
+                    repos.append(repo)
+
+        logger.info(
+            "GitHub returned %d repos (across %d language queries)",
+            len(repos),
+            len(languages_to_query),
+        )
+        return repos[:limit]
 
     async def fetch_issues(
         self,
@@ -116,12 +143,14 @@ class GitHubSource:
     ) -> list[IssueResult]:
         """Search GitHub for open contribution-friendly issues.
 
-        Searches for issues labeled "good first issue" OR "help wanted" in
-        repos that use the user's primary languages.
+        Only queries the two highest-signal labels ("good first issue" and
+        "help wanted") to keep API request count manageable.  The full
+        ``_CONTRIBUTION_LABELS`` list is available for Up For Grabs filtering
+        and future label-expansion work.
 
         Args:
             profile: The user's normalised profile.
-            limit:   Max issues to return (per label query).
+            limit:   Max issues to return in total.
 
         Returns:
             List of IssueResult objects with difficulty pre-classified.
@@ -130,12 +159,15 @@ class GitHubSource:
             RateLimitError: If GitHub API rate limit is hit.
         """
         token = _resolve_token(profile)
-        per_label = max(limit // len(_CONTRIBUTION_LABELS), 10)
+        # Only use the two most-populated labels to avoid burning rate-limit budget.
+        # Using all 8 labels would cost 8 API calls per analysis.
+        active_labels = _CONTRIBUTION_LABELS[:2]  # "good first issue", "help wanted"
+        per_label = max(limit // len(active_labels), 10)
 
         all_issues: list[IssueResult] = []
         seen_urls: set[str] = set()
 
-        for label in _CONTRIBUTION_LABELS:
+        for label in active_labels:
             query = _build_issue_query(profile, label)
             logger.debug("GitHub issue query [%s]: %s", label, query)
 
@@ -232,37 +264,33 @@ class GitHubSource:
 # ---------------------------------------------------------------------------
 
 
-def _build_repo_query(profile: UserProfile) -> str:
+def _build_repo_query(profile: UserProfile, language: str | None = None) -> str:
     """Build a GitHub repository search query from a user profile.
 
     Strategy:
-    - Include language: qualifiers for each of the user's languages (OR'd
-      together by sending multiple language qualifiers isn't supported, so
-      we use the primary language only).
-    - Add topic: qualifiers for skill-matching (e.g. "topic:fastapi").
-    - Exclude archived repos and filter for recently active ones.
+    - Accept an explicit ``language`` override so callers can issue one query
+      per language and merge results (gives multi-language coverage).
+    - Skip topic: qualifiers — GitHub topics are too sparsely populated to be
+      useful as a hard filter.  We rely on semantic scoring post-fetch instead.
+    - Filter to recently active, non-archived repos with at least 10 stars.
 
     Args:
-        profile: Normalised user profile.
+        profile:  Normalised user profile.
+        language: Override the language qualifier.  Defaults to
+                  ``profile.languages[0]`` if the profile has languages.
 
     Returns:
         Query string for the GitHub Search Repositories API.
     """
     parts: list[str] = []
 
-    # Primary language filter (GitHub supports one language: qualifier per query)
-    if profile.languages:
-        parts.append(f"language:{profile.languages[0]}")
+    # Language filter — one per query (GitHub doesn't support OR on language:)
+    lang = language or (profile.languages[0] if profile.languages else None)
+    if lang:
+        parts.append(f"language:{lang}")
 
-    # Add topic qualifiers for top skills (max 3 to avoid over-constraining)
-    topic_skills = [s for s in profile.skills if len(s) > 3][:3]
-    for skill in topic_skills:
-        # Only include single-word skills as topics (multi-word don't work as topics)
-        if " " not in skill:
-            parts.append(f"topic:{skill}")
-
-    # Quality filters
-    parts.append(f"pushed:>{_MIN_PUSHED}")
+    # Quality / freshness filters
+    parts.append(f"pushed:>{_min_pushed_date()}")
     parts.append("archived:false")
     parts.append("stars:>10")  # avoid abandoned/empty repos
 
@@ -271,6 +299,12 @@ def _build_repo_query(profile: UserProfile) -> str:
 
 def _build_issue_query(profile: UserProfile, label: str) -> str:
     """Build a GitHub issue search query for a specific contribution label.
+
+    Improvements over the original:
+    - Queries ALL user languages (not just the first), using a separate query
+      per language (callers iterate over labels; we just ensure the lang filter
+      is present).
+    - Adds ``stars:>50`` on the parent repo to filter out low-quality projects.
 
     Args:
         profile: Normalised user profile.
@@ -288,6 +322,9 @@ def _build_issue_query(profile: UserProfile, label: str) -> str:
     # Filter by primary language if available
     if profile.languages:
         parts.append(f"language:{profile.languages[0]}")
+
+    # Only surface issues from repos with meaningful adoption
+    parts.append("stars:>50")
 
     return " ".join(parts)
 

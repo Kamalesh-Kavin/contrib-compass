@@ -10,15 +10,17 @@ NOT responsible for:
     - Final ranking (see scorer)
 
 Algorithm:
-    Score = |user_skills ∩ target_tokens| / max(|user_skills|, 1)
+    Score = |user_skills ∩ target_tokens| / min(|user_skills|, 10)
+
+    The denominator is capped at 10 so that users with very long skill lists
+    (e.g. 40 skills from a detailed resume) aren't penalised by the maths.
+    A repo that matches 3 of your 40 skills is a reasonable match — it shouldn't
+    score 0.075 just because your resume is thorough.
 
     Where target_tokens includes:
     - Individual words from the description (lowercased)
     - Repo topics (lowercased)
     - Primary language (lowercased)
-
-    This gives a Jaccard-style precision metric: what fraction of the
-    user's skills appear in the target?
 
     We also check for substring matches (e.g. "fastapi" in "fastapi-users")
     to handle compound tokens.
@@ -30,6 +32,11 @@ import re
 
 # Tokenise a sentence into lowercase words
 _WORD_RE = re.compile(r"[a-z0-9#+\-.]+")
+
+# Cap the denominator to avoid penalising users with many skills.
+# A user with 5 matching skills out of 40 total still scores 5/10 = 0.5
+# rather than 5/40 = 0.125.
+_SCORE_DENOMINATOR_CAP = 10
 
 
 def score_repo(
@@ -67,6 +74,7 @@ def score_issue(
     title: str,
     labels: list[str],
     repo_full_name: str,
+    body_preview: str | None = None,
 ) -> tuple[float, list[str]]:
     """Score an issue against a user's skill list using keyword overlap.
 
@@ -75,6 +83,7 @@ def score_issue(
         title:         Issue title.
         labels:        Issue label names.
         repo_full_name: e.g. "tiangolo/fastapi" — repo name is also a signal.
+        body_preview:  First ~300 chars of the issue body (optional but improves matching).
 
     Returns:
         A tuple ``(score, matched_skills)``.
@@ -88,8 +97,9 @@ def score_issue(
     if not skills:
         return 0.0, []
 
-    # Build target from title words + label words + repo name parts
-    combined = f"{title} {' '.join(labels)} {repo_full_name.replace('/', ' ')}"
+    # Build target from title words + label words + repo name parts + body preview
+    body_part = body_preview or ""
+    combined = f"{title} {' '.join(labels)} {repo_full_name.replace('/', ' ')} {body_part}"
     target_tokens = set(_WORD_RE.findall(combined.lower()))
     return _overlap_score(skills, target_tokens)
 
@@ -136,7 +146,8 @@ def _overlap_score(
 ) -> tuple[float, list[str]]:
     """Compute overlap score between skill list and target token set.
 
-    Checks both exact match and substring containment.
+    Checks both exact match and substring containment.  Uses a capped
+    denominator so users with very long skill lists aren't unfairly penalised.
 
     Args:
         skills:        User skill list (lowercased).
@@ -163,5 +174,8 @@ def _overlap_score(
                     matched.append(skill)
                     break
 
-    score = len(matched) / len(skills) if skills else 0.0
+    # Cap denominator at _SCORE_DENOMINATOR_CAP so that users with many skills
+    # don't receive artificially low scores for repos that match several skills.
+    denominator = min(len(skills), _SCORE_DENOMINATOR_CAP)
+    score = len(matched) / denominator if denominator > 0 else 0.0
     return round(min(score, 1.0), 4), matched

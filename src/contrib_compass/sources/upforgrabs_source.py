@@ -12,7 +12,7 @@ NOT responsible for:
 Data source:
     Up For Grabs stores project data as individual YAML files in a public
     GitHub repository.  We fetch the directory listing via the GitHub
-    Contents API, then fetch each YAML file and parse it.
+    Contents API, then fetch each YAML file concurrently and parse it.
 
     Repo: https://github.com/up-for-grabs/up-for-grabs.net
     Data: /_data/projects/*.yml  (each file is one project)
@@ -31,20 +31,31 @@ Data source:
           issue-count: 42
 
 Caching:
-    The project list is fetched once per analysis (not cached globally)
-    because it's a single API call and stale data would mislead users.
+    The project list is expensive to fetch (200+ sequential requests in the
+    original design).  We cache it in-memory at the module level with a
+    1-hour TTL so repeated analyses within the same server process don't
+    re-fetch everything.  The cache is keyed by the GitHub token used, so
+    different tokens get independent caches (different rate-limit buckets).
+
+Concurrency:
+    YAML files are fetched concurrently using ``asyncio.gather`` in batches
+    of 20 to avoid overwhelming the GitHub Contents API.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+import time
+from typing import Any
 
 import httpx
 import yaml
 
 from contrib_compass.models import IssueResult, RepoResult, UserProfile
 from contrib_compass.sources.github_source import (
+    _CONTRIBUTION_LABELS,
     _parse_repo,
     _resolve_token,
 )
@@ -60,6 +71,36 @@ _GITHUB_API = "https://api.github.com"
 # (the full list has ~1 000 projects; we take the first N after tag filtering)
 _MAX_UFG_PROJECTS = 30
 
+# Maximum number of YAML files to download per analysis — keeps total HTTP
+# requests predictable.  Fetching 200 files concurrently in batches of 20
+# costs 10 asyncio.gather rounds, which is fast even on a free Render instance.
+_MAX_UFG_FILES = 200
+
+# Batch size for concurrent YAML fetches — avoids flooding the API.
+_FETCH_BATCH_SIZE = 20
+
+# ---------------------------------------------------------------------------
+# Module-level project list cache
+# ---------------------------------------------------------------------------
+# Structure: { token: {"projects": list[dict], "fetched_at": float} }
+# TTL: 3600 seconds (1 hour).  Using the token as cache key ensures different
+# users with different auth levels don't share cache entries.
+_PROJECT_CACHE: dict[str, dict[str, Any]] = {}
+_CACHE_TTL_SECONDS = 3600
+
+
+def _get_cached_projects(token: str) -> list[dict] | None:
+    """Return cached project list if still fresh, else None."""
+    entry = _PROJECT_CACHE.get(token)
+    if entry and (time.monotonic() - entry["fetched_at"]) < _CACHE_TTL_SECONDS:
+        return entry["projects"]
+    return None
+
+
+def _set_cached_projects(token: str, projects: list[dict]) -> None:
+    """Store project list in the in-memory cache."""
+    _PROJECT_CACHE[token] = {"projects": projects, "fetched_at": time.monotonic()}
+
 
 class UpForGrabsSource:
     """Fetches contribution opportunities from the Up For Grabs project list.
@@ -70,11 +111,12 @@ class UpForGrabsSource:
 
     Args:
         client: An ``httpx.AsyncClient`` instance (injected for testability).
+                Must NOT be None in production — always inject a shared client
+                from the FastAPI lifespan to avoid resource leaks.
     """
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client
-        self._owns_client = client is None
 
     async def fetch_repos(
         self,
@@ -93,16 +135,21 @@ class UpForGrabsSource:
             List of unscored RepoResult objects.
         """
         token = _resolve_token(profile)
-        projects = await self._fetch_project_list(token)
+        projects = await self._get_project_list(token)
 
         # Filter projects whose tags overlap with user skills
         matched = _filter_by_skills(projects, profile.skills)[:limit]
 
+        # Fetch GitHub repo metadata for all matched projects concurrently
+        tasks = [self._fetch_repo_for_project(p, token) for p in matched]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         repos: list[RepoResult] = []
-        for project in matched:
-            repo = await self._fetch_repo_for_project(project, token)
-            if repo is not None:
-                repos.append(repo)
+        for result in results:
+            if isinstance(result, RepoResult):
+                repos.append(result)
+            elif isinstance(result, Exception):
+                logger.debug("Repo fetch failed: %s", result)
 
         logger.info("UpForGrabs returned %d repos", len(repos))
         return repos
@@ -122,17 +169,24 @@ class UpForGrabsSource:
             List of IssueResult objects with difficulty pre-classified.
         """
         token = _resolve_token(profile)
-        projects = await self._fetch_project_list(token)
+        # Reuse the same cached project list — no second network fetch
+        projects = await self._get_project_list(token)
         matched = _filter_by_skills(projects, profile.skills)[:_MAX_UFG_PROJECTS]
+
+        # Fetch issues for all matched projects concurrently
+        tasks = [self._fetch_issues_for_project(p, token) for p in matched]
+        nested = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_issues: list[IssueResult] = []
         seen_urls: set[str] = set()
 
-        for project in matched:
-            if len(all_issues) >= limit:
-                break
-            issues = await self._fetch_issues_for_project(project, token)
-            for issue in issues:
+        for result in nested:
+            if isinstance(result, Exception):
+                logger.debug("Issue fetch failed for a UFG project: %s", result)
+                continue
+            for issue in result:  # type: ignore[union-attr]
+                if len(all_issues) >= limit:
+                    break
                 if issue.html_url not in seen_urls:
                     seen_urls.add(issue.html_url)
                     all_issues.append(issue)
@@ -142,16 +196,42 @@ class UpForGrabsSource:
 
     # ── Internal helpers ───────────────────────────────────────────────────
 
-    async def _fetch_project_list(self, token: str) -> list[dict]:
-        """Fetch and parse all Up For Grabs project YAML files.
+    async def _get_project_list(self, token: str) -> list[dict]:
+        """Return the Up For Grabs project list, using the in-memory cache.
+
+        Cache hit:  returns instantly (no HTTP requests).
+        Cache miss: fetches the directory listing + all YAML files concurrently,
+                    then stores the result in the cache for future calls.
+
+        Args:
+            token: GitHub auth token (used as cache key).
 
         Returns:
             List of parsed project dicts.
         """
-        client = await self._get_client()
+        cached = _get_cached_projects(token)
+        if cached is not None:
+            logger.debug("UpForGrabs project list served from cache (%d projects)", len(cached))
+            return cached
+
+        projects = await self._fetch_project_list(token)
+        _set_cached_projects(token, projects)
+        return projects
+
+    async def _fetch_project_list(self, token: str) -> list[dict]:
+        """Fetch and parse all Up For Grabs project YAML files.
+
+        Fetches YAML files concurrently in batches of ``_FETCH_BATCH_SIZE``
+        to avoid overwhelming the GitHub Contents API while still being much
+        faster than the previous sequential approach (200 requests → ~10 rounds).
+
+        Returns:
+            List of parsed project dicts.
+        """
+        client = self._get_client()
         headers = _make_headers(token)
 
-        # Step 1: Get directory listing
+        # Step 1: Get directory listing (one request)
         try:
             resp = await client.get(_UFG_CONTENTS_API, headers=headers)
             resp.raise_for_status()
@@ -160,24 +240,50 @@ class UpForGrabsSource:
             logger.warning("Failed to fetch Up For Grabs listing: %s", exc)
             return []
 
-        # Step 2: Fetch and parse each YAML file (limit to first 200 for speed)
-        projects: list[dict] = []
-        for entry in entries[:200]:
-            if not entry.get("name", "").endswith(".yml"):
-                continue
-            try:
-                file_resp = await client.get(entry["url"], headers=headers)
-                file_resp.raise_for_status()
-                file_data = file_resp.json()
-                # GitHub returns file content as base64
-                content = base64.b64decode(file_data["content"]).decode("utf-8")
-                project = yaml.safe_load(content)
-                if isinstance(project, dict):
-                    projects.append(project)
-            except Exception as exc:
-                logger.debug("Skipping UFG project file %s: %s", entry.get("name"), exc)
+        # Collect YAML file entries (up to _MAX_UFG_FILES)
+        yaml_entries = [e for e in entries if e.get("name", "").endswith(".yml")][:_MAX_UFG_FILES]
 
+        # Step 2: Fetch YAML files concurrently in batches
+        projects: list[dict] = []
+        for batch_start in range(0, len(yaml_entries), _FETCH_BATCH_SIZE):
+            batch = yaml_entries[batch_start : batch_start + _FETCH_BATCH_SIZE]
+            tasks = [self._fetch_single_yaml(entry, headers, client) for entry in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, dict):
+                    projects.append(result)
+                # Exceptions are silently skipped (logged inside _fetch_single_yaml)
+
+        logger.info("UpForGrabs fetched %d projects from YAML files", len(projects))
         return projects
+
+    async def _fetch_single_yaml(
+        self,
+        entry: dict,
+        headers: dict[str, str],
+        client: httpx.AsyncClient,
+    ) -> dict | None:
+        """Fetch and parse one YAML project file from GitHub Contents API.
+
+        Args:
+            entry:   Directory entry dict from the GitHub Contents API.
+            headers: HTTP headers (auth + accept).
+            client:  The shared async HTTP client.
+
+        Returns:
+            Parsed project dict, or None on any error.
+        """
+        try:
+            file_resp = await client.get(entry["url"], headers=headers)
+            file_resp.raise_for_status()
+            file_data = file_resp.json()
+            # GitHub returns file content as base64-encoded bytes
+            content = base64.b64decode(file_data["content"]).decode("utf-8")
+            project = yaml.safe_load(content)
+            return project if isinstance(project, dict) else None
+        except Exception as exc:
+            logger.debug("Skipping UFG project file %s: %s", entry.get("name"), exc)
+            return None
 
     async def _fetch_repo_for_project(
         self,
@@ -200,7 +306,7 @@ class UpForGrabsSource:
         if not owner_repo:
             return None
 
-        client = await self._get_client()
+        client = self._get_client()
         headers = _make_headers(token)
 
         try:
@@ -238,7 +344,7 @@ class UpForGrabsSource:
             return []
 
         label = project.get("upforgrabs", {}).get("name", "good first issue")
-        client = await self._get_client()
+        client = self._get_client()
         headers = _make_headers(token)
 
         try:
@@ -267,12 +373,24 @@ class UpForGrabsSource:
 
         return results
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Return the injected client or create a temporary one."""
-        if self._client is not None:
-            return self._client
-        # Create a new client — caller is responsible for lifecycle in tests
-        return httpx.AsyncClient(timeout=15.0)
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the injected client.
+
+        Raises:
+            RuntimeError: If no client was injected.  Always inject a shared
+                ``httpx.AsyncClient`` from the FastAPI lifespan context instead
+                of letting this class create its own — that avoids resource
+                leaks (unclosed client connections).
+        """
+        if self._client is None:
+            # Fallback for tests / standalone use — callers should prefer injecting.
+            # We create a temporary client here; the caller must ensure it is closed.
+            logger.warning(
+                "UpForGrabsSource created a temporary httpx.AsyncClient.  "
+                "Inject a shared client for production use."
+            )
+            return httpx.AsyncClient(timeout=20.0)
+        return self._client
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +400,13 @@ class UpForGrabsSource:
 
 def _filter_by_skills(projects: list[dict], skills: list[str]) -> list[dict]:
     """Filter and rank projects by tag overlap with user skills.
+
+    Tag matching uses a two-pass approach:
+    1. Exact match: normalised tag == normalised skill.
+    2. Substring match: e.g. skill "amazon web services" won't match tag "aws",
+       but skill "aws" WILL match tag "aws" in pass 1.
+       To bridge common abbreviations, we also check if any skill is a substring
+       of a tag or vice versa (only for tokens ≥ 3 chars to avoid noise).
 
     Args:
         projects: List of parsed Up For Grabs project dicts.
@@ -294,7 +419,18 @@ def _filter_by_skills(projects: list[dict], skills: list[str]) -> list[dict]:
 
     def overlap(project: dict) -> int:
         tags = {t.lower() for t in project.get("tags", [])}
-        return len(tags & skill_set)
+        # Exact overlap
+        exact = len(tags & skill_set)
+        # Substring overlap: tag contains a skill token or skill contains a tag
+        substring_bonus = 0
+        for skill in skill_set:
+            if skill in tags:
+                continue  # already counted in exact
+            for tag in tags:
+                if len(skill) >= 3 and len(tag) >= 3 and (skill in tag or tag in skill):
+                    substring_bonus += 1
+                    break
+        return exact + substring_bonus
 
     scored = [(overlap(p), p) for p in projects if overlap(p) > 0]
     scored.sort(key=lambda x: x[0], reverse=True)

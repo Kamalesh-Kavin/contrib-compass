@@ -18,6 +18,7 @@ Public API:
 from __future__ import annotations
 
 import logging
+import re
 
 from contrib_compass.models import UserProfile
 from contrib_compass.profile import docx_parser, pdf_parser, skill_normalizer
@@ -31,6 +32,33 @@ _DOCX_EXTENSIONS = {".docx", ".doc"}
 
 class UnsupportedFileTypeError(ValueError):
     """Raised when the uploaded file is not a PDF or DOCX."""
+
+
+# Regex that matches common resume section headers for the skills/tech section.
+# We look for these at the START of a line (after stripping whitespace) so that
+# a heading like "Technical Skills" triggers extraction but a sentence that
+# happens to contain the word "skills" does not.
+_SKILLS_SECTION_RE = re.compile(
+    r"^\s*(?:"
+    r"technical\s+skills?"
+    r"|skills?\s+(?:summary|overview|profile|set)?"
+    r"|technologies"
+    r"|tech(?:nical)?\s+stack"
+    r"|core\s+competencies"
+    r"|tools?\s+(?:and\s+)?technologies?"
+    r"|programming\s+languages?"
+    r"|languages?\s+(?:and\s+)?frameworks?"
+    r"|expertise"
+    r")\s*[:\-]?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Regex for lines that look like a new section header — used to detect where
+# the skills section ends (we stop at the next all-caps or title-case heading).
+_SECTION_HEADER_RE = re.compile(
+    r"^\s*(?:[A-Z][A-Z\s]{3,}|(?:[A-Z][a-z]+\s+){1,3})\s*[:\-]?\s*$",
+    re.MULTILINE,
+)
 
 
 def build_profile_from_file(
@@ -84,12 +112,16 @@ def build_profile_from_file(
 
     logger.info("Extracted %d skills, %d languages from resume", len(skills), len(languages))
 
+    # Build bio from the skills section text (much more useful for semantic
+    # matching than the first 500 chars which is typically name + contact info).
+    bio = _extract_skills_section(raw_text)
+
     return UserProfile(
         role=role.strip(),
         skills=skills,
         languages=languages,
         experience_years=experience_years,
-        bio=raw_text[:500],  # first 500 chars as bio context for semantic matching
+        bio=bio,
         github_token=github_token,
     )
 
@@ -152,3 +184,43 @@ def _file_extension(filename: str) -> str:
     if len(parts) < 2:
         return ""
     return f".{parts[-1].lower()}"
+
+
+def _extract_skills_section(raw_text: str, max_chars: int = 800) -> str:
+    """Extract the skills/technologies section of a resume as a bio string.
+
+    Strategy:
+    1. Search for a line that looks like a "Skills" or "Technologies" section
+       header using ``_SKILLS_SECTION_RE``.
+    2. Collect text from that line until the next recognisable section header
+       (or end-of-text), up to ``max_chars``.
+    3. If no skills section is found, fall back to joining the extracted skill
+       tokens — this is always more useful than raw_text[:500].
+
+    Args:
+        raw_text:  Full text extracted from the resume.
+        max_chars: Maximum number of characters to include in the bio.
+
+    Returns:
+        A string suitable for use as semantic context (bio field).
+    """
+    match = _SKILLS_SECTION_RE.search(raw_text)
+    if match:
+        # Text starts AFTER the heading line
+        section_start = match.end()
+        remaining = raw_text[section_start:]
+
+        # Find the next section header to know where the skills section ends
+        next_header = _SECTION_HEADER_RE.search(remaining)
+        section_text = remaining[: next_header.start()] if next_header else remaining
+
+        # Clean up and truncate
+        bio = " ".join(section_text.split())  # collapse whitespace
+        if bio:
+            return bio[:max_chars]
+
+    # Fallback: no recognisable skills section — use the middle of the resume
+    # (skip first 20% which is usually contact info, take up to max_chars).
+    skip = max(0, len(raw_text) // 5)
+    fallback = " ".join(raw_text[skip:].split())
+    return fallback[:max_chars]

@@ -10,15 +10,26 @@ NOT responsible for:
     - Fetching data (see sources/)
     - Enrichment tips (see enrichment/)
 
-Scoring formula:
-    final_score = (KEYWORD_WEIGHT * keyword_score) + (SEMANTIC_WEIGHT * semantic_score)
+Scoring formula (repos):
+    final_score = (KEYWORD_WEIGHT * keyword_score)
+                + (SEMANTIC_WEIGHT * semantic_score)
+                + (RECENCY_WEIGHT  * recency_score)
 
-    KEYWORD_WEIGHT  = 0.4
-    SEMANTIC_WEIGHT = 0.6
+    KEYWORD_WEIGHT  = 0.35
+    SEMANTIC_WEIGHT = 0.55
+    RECENCY_WEIGHT  = 0.10
+
+    Recency score:
+        1.0  if pushed within the last 30 days
+        0.75 if pushed within the last 90 days
+        0.5  if pushed within the last 180 days
+        0.25 if pushed within the last 365 days
+        0.0  otherwise (or if last_pushed_at is unknown)
 
     Rationale: Semantic scores capture synonyms and conceptual similarity
     that keyword overlap misses.  We still include keyword scores because
     they provide a strong exact-match signal (e.g. "python" in topics).
+    Recency ensures we surface actively maintained projects over stale ones.
 
     These weights are tunable — see docs/skill-matching.md.
 """
@@ -26,6 +37,7 @@ Scoring formula:
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from contrib_compass.matching import keyword_matcher, semantic_matcher
 from contrib_compass.models import IssueResult, RepoResult, UserProfile
@@ -33,8 +45,15 @@ from contrib_compass.models import IssueResult, RepoResult, UserProfile
 logger = logging.getLogger(__name__)
 
 # Scoring weights — must sum to 1.0
-KEYWORD_WEIGHT: float = 0.4
-SEMANTIC_WEIGHT: float = 0.6
+KEYWORD_WEIGHT: float = 0.35
+SEMANTIC_WEIGHT: float = 0.55
+RECENCY_WEIGHT: float = 0.10
+
+# Recency thresholds
+_30_DAYS = timedelta(days=30)
+_90_DAYS = timedelta(days=90)
+_180_DAYS = timedelta(days=180)
+_365_DAYS = timedelta(days=365)
 
 
 def rank_repos(
@@ -47,9 +66,10 @@ def rank_repos(
     Pipeline:
     1. Keyword score each repo.
     2. Semantic score all repos in a single batch (efficient).
-    3. Combine scores with KEYWORD_WEIGHT / SEMANTIC_WEIGHT.
-    4. Sort by final_score descending.
-    5. Attach matched_skills to each RepoResult.
+    3. Compute recency score from last_pushed_at.
+    4. Combine scores with KEYWORD_WEIGHT / SEMANTIC_WEIGHT / RECENCY_WEIGHT.
+    5. Sort by final_score descending.
+    6. Attach matched_skills to each RepoResult.
 
     Args:
         repos:   Raw unscored RepoResult list from source adapters.
@@ -82,12 +102,16 @@ def rank_repos(
     target_texts = [_repo_to_text(repo) for repo in repos]
     sem_scores = semantic_matcher.score_texts(model, query, target_texts)
 
-    # ── Step 3 & 4: Combine and sort ──────────────────────────────────────
+    # ── Step 3: Recency scores ─────────────────────────────────────────────
+    now = datetime.now(tz=UTC)
+    recency_scores = [_recency_score(repo.last_pushed_at, now) for repo in repos]
+
+    # ── Step 4 & 5: Combine and sort ──────────────────────────────────────
     scored: list[RepoResult] = []
-    for repo, kw, sem, matched in zip(
-        repos, kw_scores, sem_scores, matched_skills_list, strict=False
+    for repo, kw, sem, rec, matched in zip(
+        repos, kw_scores, sem_scores, recency_scores, matched_skills_list, strict=False
     ):
-        final = round(KEYWORD_WEIGHT * kw + SEMANTIC_WEIGHT * sem, 4)
+        final = round(KEYWORD_WEIGHT * kw + SEMANTIC_WEIGHT * sem + RECENCY_WEIGHT * rec, 4)
         scored.append(
             RepoResult(
                 **{
@@ -146,13 +170,15 @@ def rank_issues(
             title=issue.title,
             labels=issue.labels,
             repo_full_name=issue.repo_full_name,
+            body_preview=issue.body_preview,  # pass body for richer matching
         )
         kw_scores.append(score)
         matched_skills_list.append(matched)
 
-    # ── Semantic scores ────────────────────────────────────────────────────
+    # ── Semantic scores — include body_preview for richer context ─────────
     target_texts = [
-        f"{issue.title} {issue.repo_full_name} {' '.join(issue.labels)}" for issue in unique
+        f"{issue.title} {issue.repo_full_name} {' '.join(issue.labels)} {issue.body_preview or ''}"
+        for issue in unique
     ]
     sem_scores = semantic_matcher.score_texts(model, query, target_texts)
 
@@ -161,6 +187,7 @@ def rank_issues(
     for issue, kw, sem, matched in zip(
         unique, kw_scores, sem_scores, matched_skills_list, strict=False
     ):
+        # Issues use only keyword + semantic (no recency field on IssueResult)
         final = round(KEYWORD_WEIGHT * kw + SEMANTIC_WEIGHT * sem, 4)
         updated = IssueResult(**{**issue.model_dump(), "matched_skills": matched})
         scored.append((final, updated))
@@ -194,3 +221,33 @@ def _repo_to_text(repo: RepoResult) -> str:
         # e.g. "tiangolo/fastapi" → "fastapi"
         parts.append(repo.full_name.split("/")[-1].replace("-", " "))
     return " ".join(parts) or repo.full_name
+
+
+def _recency_score(last_pushed_at: datetime | None, now: datetime) -> float:
+    """Compute a 0–1 recency score based on how recently the repo was pushed.
+
+    Args:
+        last_pushed_at: UTC datetime of last push, or None.
+        now:            Current UTC datetime.
+
+    Returns:
+        Float in [0.0, 1.0] — higher means more recently active.
+    """
+    if last_pushed_at is None:
+        return 0.0
+
+    # Ensure both datetimes are timezone-aware for subtraction
+    if last_pushed_at.tzinfo is None:
+        last_pushed_at = last_pushed_at.replace(tzinfo=UTC)
+
+    age = now - last_pushed_at
+
+    if age <= _30_DAYS:
+        return 1.0
+    if age <= _90_DAYS:
+        return 0.75
+    if age <= _180_DAYS:
+        return 0.5
+    if age <= _365_DAYS:
+        return 0.25
+    return 0.0
