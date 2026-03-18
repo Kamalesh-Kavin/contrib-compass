@@ -17,17 +17,19 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy dependency manifests first for layer caching
-COPY pyproject.toml .
-
-# Create a venv and install all production dependencies
-# UV_COMPILE_BYTECODE=1 pre-compiles .pyc files for faster startup
-RUN uv venv .venv && \
-    UV_COMPILE_BYTECODE=1 uv pip install --python .venv/bin/python \
-        --no-cache ".[dev]"
-
-# Copy source after deps to preserve cache on code-only changes
+# Copy everything uv needs to resolve + build the package:
+#   pyproject.toml  — project metadata + dependency list
+#   uv.lock         — pinned lockfile for reproducible installs
+#   src/            — hatchling needs the source tree to build the wheel
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
+
+# Create a venv and install all production dependencies from the lockfile.
+# UV_COMPILE_BYTECODE=1 pre-compiles .pyc files for faster startup.
+# --no-dev keeps the image lean (excludes pytest, ruff, etc.)
+RUN uv venv .venv && \
+    UV_COMPILE_BYTECODE=1 uv sync --python .venv/bin/python \
+        --frozen --no-dev --no-cache
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────────
 FROM python:3.13-slim AS runtime
@@ -41,11 +43,9 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 COPY --from=builder /app/.venv .venv
 COPY --from=builder /app/src src/
 
-# Copy the model cache directory (empty on fresh build; populated at runtime)
-COPY .cache/ .cache/
-
-# Ensure .cache is writable for model download on first run
-RUN chown -R appuser:appgroup /app
+# Create the model cache directory so sentence-transformers can write into it
+# on first run. The directory is empty here — model downloads at startup.
+RUN mkdir -p .cache && chown -R appuser:appgroup /app
 
 USER appuser
 
@@ -60,3 +60,4 @@ EXPOSE 8000
 
 # Graceful shutdown with --timeout-graceful-shutdown
 CMD ["uvicorn", "contrib_compass.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "10"]
+
