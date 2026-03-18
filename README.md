@@ -14,9 +14,11 @@ ContribCompass takes your resume (PDF / DOCX) or a quick skill form and returns 
 
 ---
 
-## Demo
+## Live Demo
 
-> Screenshot placeholder — add a real screenshot after first deploy.
+**[https://contrib-compass.onrender.com/](https://contrib-compass.onrender.com/)**
+
+> Hosted on Render free tier — may take ~30 seconds to wake up on first visit.
 
 ```
 ┌─────────────────────────────────────────────────────┐
