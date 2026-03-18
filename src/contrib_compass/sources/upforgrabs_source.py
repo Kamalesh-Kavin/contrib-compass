@@ -55,7 +55,6 @@ import yaml
 
 from contrib_compass.models import IssueResult, RepoResult, UserProfile
 from contrib_compass.sources.github_source import (
-    _CONTRIBUTION_LABELS,
     _parse_repo,
     _resolve_token,
 )

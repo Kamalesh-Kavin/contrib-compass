@@ -304,7 +304,7 @@ async def _run_analysis(
 
     # Results below this threshold are not useful to the user — they are either
     # language mismatches or completely unrelated repos/issues.
-    MIN_SCORE_THRESHOLD = 0.05
+    min_score_threshold = 0.05
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -371,7 +371,7 @@ async def _run_analysis(
             # ── Step 5: Filter low-relevance results ──────────────────────
             # Keep repos above the threshold; always keep at least 5 so the
             # results page is never completely empty for valid profiles.
-            filtered_repos = [r for r in ranked_repos if r.final_score >= MIN_SCORE_THRESHOLD]
+            filtered_repos = [r for r in ranked_repos if r.final_score >= min_score_threshold]
             if not filtered_repos:
                 filtered_repos = ranked_repos  # graceful fallback
             filtered_repos = filtered_repos[: settings.max_repos]

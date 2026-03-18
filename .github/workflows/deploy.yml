@@ -23,12 +23,16 @@ jobs:
     name: Trigger Render deploy
     runs-on: ubuntu-latest
 
-    # Only run if RENDER_DEPLOY_HOOK_URL secret is set (skip in forks)
-    if: ${{ vars.RENDER_DEPLOY_HOOK_URL != '' || secrets.RENDER_DEPLOY_HOOK_URL != '' }}
-
     steps:
       - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
+          # Skip gracefully if the secret is not configured (e.g. forks, local dev)
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret not set — skipping deploy trigger."
+            exit 0
+          fi
           curl --silent --show-error --fail \
-            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+            -X POST "$RENDER_DEPLOY_HOOK_URL"
           echo "Deploy hook triggered successfully."

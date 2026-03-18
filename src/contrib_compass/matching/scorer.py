@@ -224,7 +224,7 @@ def _repo_to_text(repo: RepoResult) -> str:
 
 
 def _recency_score(last_pushed_at: datetime | None, now: datetime) -> float:
-    """Compute a 0–1 recency score based on how recently the repo was pushed.
+    """Compute a 0-1 recency score based on how recently the repo was pushed.
 
     Args:
         last_pushed_at: UTC datetime of last push, or None.

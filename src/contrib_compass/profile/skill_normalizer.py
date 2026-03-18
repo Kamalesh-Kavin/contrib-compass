@@ -335,7 +335,6 @@ _STOP_WORDS: frozenset[str] = frozenset(
         "college",
         "certification",
         "certified",
-        "certification",
         # Date / number tokens that pass the 2-char filter
         "jan",
         "feb",
