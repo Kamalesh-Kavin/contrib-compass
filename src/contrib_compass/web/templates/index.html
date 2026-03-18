@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{#
+  index.html — Home page with two tabs:
+    Tab 1 (Upload): Upload a PDF or DOCX resume
+    Tab 2 (Manual): Fill in role, skills, languages manually
+
+  The form POSTs to /analyze with enctype="multipart/form-data" so both
+  file upload and text fields work in the same request.
+
+  A hidden input "input_mode" is set by the tab switching JS so the
+  server knows which tab was active.
+
+  If {{ error }} is set in the template context, a red alert banner is shown
+  above the form (used when profile extraction fails).
+#}
+
+{% block title %}ContribCompass — Find Your First Contribution{% endblock %}
+
+{% block content %}
+
+<!-- ── Hero ──────────────────────────────────────────────────────────────── -->
+<div class="text-center mb-10">
+  <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight text-white mb-3">
+    Find your next
+    <span class="text-brand-400">open source</span>
+    contribution
+  </h1>
+  <p class="text-gray-400 text-lg max-w-2xl mx-auto">
+    Upload your resume or enter your stack — ContribCompass matches you with
+    GitHub repos and <em>good first issues</em> using semantic search.
+  </p>
+</div>
+
+<!-- ── Error banner ──────────────────────────────────────────────────────── -->
+{% if error %}
+<div class="mb-6 rounded-lg bg-red-900/40 border border-red-700 px-4 py-3 text-red-300 text-sm flex items-start gap-3">
+  <svg class="w-5 h-5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+  </svg>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+
+<!-- ── Main card ──────────────────────────────────────────────────────────── -->
+<div class="bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
+
+  <!-- Tab bar -->
+  <div class="flex border-b border-gray-800">
+    <button
+      id="tab-upload"
+      onclick="switchTab('upload')"
+      class="tab-btn flex-1 py-3 px-4 text-sm font-medium transition-colors
+             text-brand-400 border-b-2 border-brand-400 bg-gray-900"
+    >
+      Upload Resume
+    </button>
+    <button
+      id="tab-manual"
+      onclick="switchTab('manual')"
+      class="tab-btn flex-1 py-3 px-4 text-sm font-medium transition-colors
+             text-gray-400 border-b-2 border-transparent hover:text-gray-200"
+    >
+      Enter Manually
+    </button>
+  </div>
+
+  <!-- ── Shared form ──────────────────────────────────────────────────────── -->
+  <form
+    method="POST"
+    action="/analyze"
+    enctype="multipart/form-data"
+    id="analyze-form"
+    class="p-6 sm:p-8 space-y-6"
+  >
+    <!-- Hidden field that JS sets to the active tab -->
+    <input type="hidden" name="input_mode" id="input_mode" value="upload" />
+
+    <!-- ── Upload panel ──────────────────────────────────────────────────── -->
+    <div id="panel-upload">
+
+      <!-- Drag-and-drop file zone -->
+      <label
+        for="resume-input"
+        id="drop-zone"
+        class="flex flex-col items-center justify-center border-2 border-dashed
+               border-gray-700 rounded-xl p-10 cursor-pointer hover:border-brand-500
+               transition-colors text-center"
+      >
+        <svg class="w-10 h-10 text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        <p class="text-gray-300 font-medium mb-1">Drop your resume here</p>
+        <p class="text-gray-500 text-sm">PDF or DOCX · max 5 MB</p>
+        <p id="file-name" class="mt-2 text-brand-400 text-sm font-medium hidden"></p>
+      </label>
+      <input
+        type="file"
+        id="resume-input"
+        name="resume"
+        accept=".pdf,.doc,.docx"
+        class="hidden"
+        onchange="showFileName(this)"
+      />
+
+    </div>
+
+    <!-- ── Manual panel (hidden by default) ──────────────────────────────── -->
+    <div id="panel-manual" class="hidden space-y-4">
+
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-1" for="skills_raw">
+          Skills <span class="text-gray-500">(comma-separated)</span>
+        </label>
+        <input
+          type="text"
+          id="skills_raw"
+          name="skills_raw"
+          placeholder="Python, FastAPI, PostgreSQL, Docker, React"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
+                 focus:ring-brand-500"
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-1" for="languages_raw">
+          Programming languages
+          <span class="text-gray-500">(optional — inferred from skills if blank)</span>
+        </label>
+        <input
+          type="text"
+          id="languages_raw"
+          name="languages_raw"
+          placeholder="Python, TypeScript"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
+                 focus:ring-brand-500"
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-1" for="bio">
+          Bio / summary <span class="text-gray-500">(optional)</span>
+        </label>
+        <textarea
+          id="bio"
+          name="bio"
+          rows="3"
+          placeholder="I'm a backend engineer interested in distributed systems and open source tooling…"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
+                 focus:ring-brand-500 resize-none"
+        ></textarea>
+      </div>
+
+    </div>
+
+    <!-- ── Shared fields (always visible) ───────────────────────────────── -->
+    <div class="grid sm:grid-cols-2 gap-4">
+
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-1" for="role">
+          Role / title <span class="text-red-400">*</span>
+        </label>
+        <input
+          type="text"
+          id="role"
+          name="role"
+          required
+          placeholder="Backend Engineer"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
+                 focus:ring-brand-500"
+        />
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-1" for="experience_years">
+          Years of experience
+        </label>
+        <input
+          type="number"
+          id="experience_years"
+          name="experience_years"
+          min="0"
+          max="50"
+          value="0"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+                 text-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+      </div>
+
+    </div>
+
+    <!-- GitHub token (optional) -->
+    <div>
+      <label class="block text-sm font-medium text-gray-300 mb-1" for="github_token">
+        GitHub token
+        <span class="text-gray-500">(optional — raises rate limit from 60 to 5 000 req/hr)</span>
+      </label>
+      <input
+        type="password"
+        id="github_token"
+        name="github_token"
+        placeholder="ghp_…"
+        autocomplete="off"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm
+               text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2
+               focus:ring-brand-500"
+      />
+      <p class="mt-1 text-xs text-gray-500">
+        Never stored — used only for this analysis.
+        <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer"
+           class="underline hover:text-gray-300">Create one here.</a>
+      </p>
+    </div>
+
+    <!-- Submit -->
+    <button
+      type="submit"
+      class="w-full sm:w-auto px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white
+             font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2
+             focus:ring-brand-400"
+    >
+      Find contributions →
+    </button>
+
+  </form>
+</div>
+
+<!-- ── How it works ──────────────────────────────────────────────────────── -->
+<div class="mt-14 grid sm:grid-cols-3 gap-6 text-center">
+  {% for step in [
+    ("1", "Upload or enter", "Upload your resume (PDF/DOCX) or type your role and skills."),
+    ("2", "We search + match", "GitHub Search API + Up For Grabs + semantic re-ranking with sentence-transformers."),
+    ("3", "Explore results", "Browse ranked repos and good-first issues with difficulty badges."),
+  ] %}
+  <div class="bg-gray-900/50 rounded-xl border border-gray-800 p-5">
+    <div class="w-8 h-8 rounded-full bg-brand-500/20 text-brand-400 font-bold text-sm
+                flex items-center justify-center mx-auto mb-3">{{ step[0] }}</div>
+    <h3 class="font-semibold text-white mb-1">{{ step[1] }}</h3>
+    <p class="text-gray-500 text-sm">{{ step[2] }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  // ── Tab switching ────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    // Update hidden input
+    document.getElementById('input_mode').value = tab;
+
+    // Panel visibility
+    document.getElementById('panel-upload').classList.toggle('hidden', tab !== 'upload');
+    document.getElementById('panel-manual').classList.toggle('hidden', tab !== 'manual');
+
+    // Tab button styles
+    ['upload', 'manual'].forEach(t => {
+      const btn = document.getElementById('tab-' + t);
+      if (t === tab) {
+        btn.classList.add('text-brand-400', 'border-brand-400');
+        btn.classList.remove('text-gray-400', 'border-transparent');
+      } else {
+        btn.classList.remove('text-brand-400', 'border-brand-400');
+        btn.classList.add('text-gray-400', 'border-transparent');
+      }
+    });
+  }
+
+  // ── File name display ────────────────────────────────────────────────────
+  function showFileName(input) {
+    const label = document.getElementById('file-name');
+    if (input.files && input.files[0]) {
+      label.textContent = input.files[0].name;
+      label.classList.remove('hidden');
+    } else {
+      label.classList.add('hidden');
+    }
+  }
+
+  // ── Drag-and-drop support ────────────────────────────────────────────────
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('resume-input');
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('border-brand-500', 'bg-gray-800/40');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-brand-500', 'bg-gray-800/40');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-brand-500', 'bg-gray-800/40');
+    const files = e.dataTransfer.files;
+    if (files.length) {
+      // Assign dropped file to the actual input so FormData picks it up
+      const dt = new DataTransfer();
+      dt.items.add(files[0]);
+      fileInput.files = dt.files;
+      showFileName(fileInput);
+    }
+  });
+</script>
+{% endblock %}

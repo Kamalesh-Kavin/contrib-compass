@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+{#
+  base.html — Root Jinja2 layout template.
+
+  All other templates extend this via extends "base.html".
+
+  Blocks available for child templates:
+    block title    — Page <title> text (default: "ContribCompass")
+    block head     — Extra <head> tags (CSS, meta, etc.)
+    block content  — Main page body content
+    block scripts  — Extra <script> tags at end of <body>
+
+  Design choices:
+    - Dark theme using Tailwind CSS CDN (no build step required).
+    - Indigo accent colour throughout for consistency.
+    - Responsive — single column on mobile, wider on sm+.
+    - Navbar always visible with the site name + GitHub link.
+#}
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}ContribCompass{% endblock %}</title>
+
+  <!-- Tailwind CSS via CDN — dark mode enabled via class strategy -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // Custom indigo shades used for accent / focus rings
+            brand: {
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  {% block head %}{% endblock %}
+</head>
+
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col antialiased">
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+  <nav class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+
+      <!-- Logo / brand name -->
+      <a href="/" class="flex items-center gap-2 text-white font-bold text-lg tracking-tight hover:text-brand-400 transition-colors">
+        <!-- Compass icon (inline SVG — no external dependency) -->
+        <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" stroke-width="1.5"/>
+          <path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        ContribCompass
+      </a>
+
+      <!-- Nav links -->
+      <div class="flex items-center gap-4 text-sm text-gray-400">
+        <a href="/" class="hover:text-white transition-colors">Home</a>
+        <a
+          href="https://github.com/Kamalesh-Kavin/contrib-compass"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="hover:text-white transition-colors flex items-center gap-1"
+        >
+          <!-- GitHub icon -->
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path fill-rule="evenodd" clip-rule="evenodd"
+              d="M12 2C6.477 2 2 6.484 2 12.021c0 4.428 2.865 8.185 6.839 9.51.5.092.682-.217.682-.482
+                 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.342-3.369-1.342-.454-1.154-1.11-1.462-1.11-1.462
+                 -.908-.62.069-.608.069-.608 1.003.07 1.531 1.031 1.531 1.031.892 1.53 2.341 1.088 2.91.832
+                 .092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688
+                 -.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0
+                 0 1 2.504.337c1.909-1.296 2.747-1.026 2.747-1.026.546 1.378.202 2.397.1 2.65.64.7 1.028 1.595
+                 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012
+                 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.021C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- ── Main content ─────────────────────────────────────────────────────── -->
+  <main class="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-10">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────────────────────── -->
+  <footer class="border-t border-gray-800 py-6 text-center text-xs text-gray-500">
+    ContribCompass — MIT License —
+    <a href="https://github.com/Kamalesh-Kavin/contrib-compass" class="hover:text-gray-300 underline" target="_blank" rel="noopener noreferrer">
+      Source on GitHub
+    </a>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

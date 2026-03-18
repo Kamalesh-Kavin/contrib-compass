@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------------------
+# docker-compose.yml — local development
+#
+# Usage:
+#   docker compose up --build        # first run (builds image)
+#   docker compose up                # subsequent runs
+#   docker compose down              # stop and remove containers
+#
+# The .env file is loaded automatically by docker-compose.
+# Copy .env.example → .env and fill in GITHUB_TOKEN before running.
+# ---------------------------------------------------------------------------
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime          # use the slim runtime stage, not builder
+    image: contrib-compass:local
+    container_name: contrib-compass
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env                   # load GITHUB_TOKEN, MODEL_NAME, etc.
+    volumes:
+      # Mount .cache so the model persists across container restarts
+      - ./.cache:/app/.cache
+      # Mount source for live-reload in development
+      - ./src:/app/src
+    command: >
+      uvicorn contrib_compass.main:app
+        --host 0.0.0.0
+        --port 8000
+        --reload
+        --reload-dir /app/src
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s        # give the model time to download on first start
+    restart: unless-stopped

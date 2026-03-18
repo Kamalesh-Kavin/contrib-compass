@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest a new feature or improvement
+title: "feat: "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement!  Please fill in as much detail as possible so we can evaluate the idea.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case or pain point this feature would address.
+      placeholder: "It's frustrating that I can't filter results by difficulty level..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: A clear description of what you want to happen.
+      placeholder: "Add a difficulty filter chip (easy / medium / hard) to the results page..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternative approaches or workarounds?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area of the codebase does this affect?
+      multiple: true
+      options:
+        - "Frontend (templates)"
+        - "Profile parsing (PDF / DOCX)"
+        - "Data sources (GitHub / Up For Grabs)"
+        - "Skill matching / scoring"
+        - "Difficulty classification"
+        - "API routes"
+        - "CI / deployment"
+        - "Documentation"
+        - "Other"
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am willing to contribute a pull request for this feature.

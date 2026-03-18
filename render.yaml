@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# render.yaml — Render Infrastructure-as-Code
+#
+# This file tells Render how to build and deploy contrib-compass.
+# Docs: https://render.com/docs/render-yaml
+#
+# One-click deploy:
+#   https://render.com/deploy?repo=https://github.com/Kamalesh-Kavin/contrib-compass
+# ---------------------------------------------------------------------------
+
+services:
+  - type: web
+    name: contrib-compass
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+
+    # Render sets PORT automatically; we pass it through to uvicorn
+    envVars:
+      - key: PORT
+        value: 8000
+
+      # Set via Render dashboard → Environment → Add Secret
+      # Never hardcode GITHUB_TOKEN here.
+      - key: GITHUB_TOKEN
+        sync: false           # prompt operator to fill in manually
+
+      - key: MODEL_NAME
+        value: all-MiniLM-L6-v2
+
+      # Cache model inside /app/.cache inside the container.
+      # On Render free tier the filesystem is ephemeral — model re-downloads
+      # on each cold start (~15s). Upgrade to a paid plan and add a Disk
+      # (mount at /app/.cache) to persist the model across deploys.
+      - key: SENTENCE_TRANSFORMERS_HOME
+        value: /app/.cache
+
+      - key: MAX_REPOS
+        value: "20"
+
+      - key: MAX_ISSUES
+        value: "50"
+
+      - key: LOG_LEVEL
+        value: info
+
+    # Health check — Render marks the service healthy once this returns 200
+    healthCheckPath: /health
+
+    # Auto-deploy every time a commit lands on main
+    autoDeploy: true

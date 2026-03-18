@@ -1,0 +1,64 @@
+# .github/workflows/test.yml — Run the full test suite on every push and PR.
+#
+# Uses uv for fast dependency installation and runs pytest with coverage.
+# The coverage XML report is uploaded to Codecov so badges stay current.
+#
+# Matrix strategy: we test on the single Python version the project targets
+# (3.13) to keep CI fast.  Add more versions here if you need broader
+# compatibility guarantees in the future.
+
+name: tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      # 1. Check out the repository
+      - uses: actions/checkout@v4
+
+      # 2. Install uv — the project's package manager
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # 3. Set up Python via uv (uses .python-version if present, else matrix value)
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      # 4. Install all dependencies (including dev/test extras)
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # 5. Install the package itself in editable mode so imports resolve
+      - name: Install package (editable)
+        run: uv pip install -e .
+
+      # 6. Run tests with coverage
+      - name: Run pytest
+        run: uv run pytest tests/ --tb=short -q --cov=src/contrib_compass --cov-report=xml
+        env:
+          # Point sentence-transformers cache to a local dir so the model
+          # is downloaded once and cached between runs.
+          SENTENCE_TRANSFORMERS_HOME: .cache
+
+      # 7. Upload coverage report to Codecov (token optional for public repos)
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false

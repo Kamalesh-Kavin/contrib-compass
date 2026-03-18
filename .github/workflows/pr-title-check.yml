@@ -1,0 +1,53 @@
+# .github/workflows/pr-title-check.yml — Enforce Conventional Commits format.
+#
+# Every PR title must follow Conventional Commits:
+#   <type>(<scope>): <short description>
+#
+# Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
+#
+# Examples of valid titles:
+#   feat(matching): add BM25 keyword scorer
+#   fix(sources): handle GitHub rate limit gracefully
+#   docs: update setup.md with render deploy steps
+#   ci: add codecov integration
+
+name: pr-title-check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+jobs:
+  check-title:
+    name: Validate PR title (Conventional Commits)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR title format
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed commit types (extend as needed)
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+          # Scope is optional but validated if present
+          requireScope: false
+          # Subject (description) must start with a lowercase letter
+          subjectPattern: ^[a-z].+$
+          subjectPatternError: >
+            The subject "{subject}" found in the pull request title "{title}"
+            must start with a lowercase letter.

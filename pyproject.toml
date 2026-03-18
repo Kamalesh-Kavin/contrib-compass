@@ -1,0 +1,113 @@
+[project]
+name = "contrib-compass"
+version = "0.1.0"
+description = "Find open source repos and issues that match your skills"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.13"
+authors = [{ name = "Kamalesh-Kavin", email = "kamalesh.s7316@gmail.com" }]
+keywords = ["open-source", "contributions", "github", "career", "developer-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "httpx>=0.28.0",
+    "pymupdf>=1.25.0",
+    "python-docx>=1.1.0",
+    "pyyaml>=6.0.2",
+    "sentence-transformers>=3.3.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.18",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "aiofiles>=24.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",         # also used as test client
+    "respx>=0.21.0",         # mock httpx requests in tests
+    "ruff>=0.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Kamalesh-Kavin/contrib-compass"
+Repository = "https://github.com/Kamalesh-Kavin/contrib-compass"
+"Bug Tracker" = "https://github.com/Kamalesh-Kavin/contrib-compass/issues"
+Documentation = "https://github.com/Kamalesh-Kavin/contrib-compass/tree/main/docs"
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/contrib_compass"]
+
+# ---------------------------------------------------------------------------
+# Ruff — linting + formatting
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "ANN", # flake8-annotations (encourage type hints)
+    "S",   # flake8-bandit (security)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "ANN101", # self type annotation not needed
+    "ANN102", # cls type annotation not needed
+    "S101",   # assert in tests is fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "S"]   # relax annotations + security checks in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=src/contrib_compass --cov-report=term-missing --cov-report=html"
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src/contrib_compass"]
+omit = ["src/contrib_compass/web/templates/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

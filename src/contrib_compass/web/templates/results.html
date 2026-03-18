@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{#
+  results.html — Displays the completed analysis results.
+
+  Template context variables:
+    result      — AnalysisResult object
+    languages   — sorted list of distinct language strings (for filter chips)
+    difficulties — sorted list of distinct difficulty strings (for filter chips)
+
+  Layout:
+    - Summary bar: profile info + score count + rate limit warning (if any)
+    - Filter chips: language pills + difficulty pills (JS filtering, no reload)
+    - Repos section: cards with score bar, tips badges, matched skills, stats
+    - Issues section: table with difficulty badge, age, label chips, open button
+
+  All filtering is done in JS (no server round-trips) by toggling CSS classes.
+  Filter state is tracked in a Set per dimension (language, difficulty).
+#}
+
+{% block title %}Results — ContribCompass{% endblock %}
+
+{% block content %}
+
+<!-- ── Summary bar ───────────────────────────────────────────────────────── -->
+<div class="mb-8 flex flex-wrap items-center gap-4 justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-white">
+      Results for
+      <span class="text-brand-400">{{ result.profile.role if result.profile else "your profile" }}</span>
+    </h1>
+    {% if result.profile %}
+    <p class="text-gray-400 text-sm mt-1">
+      {{ result.profile.skills | length }} skills detected ·
+      {{ result.repos | length }} repos ·
+      {{ result.issues | length }} issues
+      {% if result.profile.experience_years %}
+        · {{ result.profile.experience_years }} yr experience
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+  <a href="/" class="text-sm text-gray-400 hover:text-white underline">
+    ← New search
+  </a>
+</div>
+
+<!-- Rate limit warning -->
+{% if result.rate_limit_warning %}
+<div class="mb-6 rounded-lg bg-yellow-900/30 border border-yellow-700 px-4 py-3 text-yellow-300 text-sm flex gap-3">
+  <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+  </svg>
+  <span>
+    GitHub API rate limit was hit during this analysis — results may be incomplete.
+    Provide a GitHub token on the home page for 5,000 requests/hour.
+  </span>
+</div>
+{% endif %}
+
+<!-- ── Filter chips ──────────────────────────────────────────────────────── -->
+{% if languages or difficulties %}
+<div class="mb-8 space-y-3">
+
+  {% if languages %}
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="text-xs text-gray-500 uppercase tracking-wider mr-1">Language</span>
+    <button
+      class="chip-lang chip-all px-3 py-1 rounded-full text-xs font-medium
+             bg-brand-500 text-white border border-brand-500"
+      onclick="filterLang('__all__', this)"
+    >All</button>
+    {% for lang in languages %}
+    <button
+      class="chip-lang px-3 py-1 rounded-full text-xs font-medium
+             bg-gray-800 text-gray-300 border border-gray-700 hover:border-brand-500"
+      onclick="filterLang('{{ lang }}', this)"
+    >{{ lang }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if difficulties %}
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="text-xs text-gray-500 uppercase tracking-wider mr-1">Difficulty</span>
+    <button
+      class="chip-diff chip-all px-3 py-1 rounded-full text-xs font-medium
+             bg-brand-500 text-white border border-brand-500"
+      onclick="filterDiff('__all__', this)"
+    >All</button>
+    {% for diff in difficulties %}
+    <button
+      class="chip-diff px-3 py-1 rounded-full text-xs font-medium
+             bg-gray-800 text-gray-300 border border-gray-700 hover:border-brand-500"
+      onclick="filterDiff('{{ diff }}', this)"
+    >{{ diff }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+
+<!-- ── Repos section ─────────────────────────────────────────────────────── -->
+{% if result.repos %}
+<section class="mb-12">
+  <h2 class="text-lg font-semibold text-white mb-4">
+    Matching repositories
+    <span class="text-gray-500 font-normal text-sm">(ranked by relevance)</span>
+  </h2>
+
+  <div id="repo-list" class="grid gap-4">
+    {% for repo in result.repos %}
+    <div
+      class="repo-card bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors"
+      data-lang="{{ repo.language | lower if repo.language else '' }}"
+    >
+      <!-- Header row -->
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <a
+          href="{{ repo.html_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-semibold text-brand-400 hover:text-brand-300 truncate"
+        >{{ repo.full_name }}</a>
+
+        <!-- Stars / forks / issues -->
+        <div class="flex items-center gap-3 text-xs text-gray-500 shrink-0">
+          <span title="Stars">★ {{ repo.stars | int }}</span>
+          <span title="Forks">⑂ {{ repo.forks | int }}</span>
+          {% if repo.language %}
+          <span class="bg-gray-800 px-2 py-0.5 rounded-full text-gray-300">{{ repo.language }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Description -->
+      {% if repo.description %}
+      <p class="text-gray-400 text-sm mb-3 line-clamp-2">{{ repo.description }}</p>
+      {% endif %}
+
+      <!-- Score bar -->
+      <div class="mb-3">
+        <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span>Relevance score</span>
+          <span class="text-gray-300 font-medium">{{ "%.0f" | format(repo.final_score * 100) }}%</span>
+        </div>
+        <div class="w-full bg-gray-800 rounded-full h-1.5">
+          <div
+            class="bg-brand-500 h-1.5 rounded-full transition-all"
+            style="width: {{ "%.1f" | format(repo.final_score * 100) }}%"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Matched skills chips -->
+      {% if repo.matched_skills %}
+      <div class="flex flex-wrap gap-1 mb-3">
+        {% for skill in repo.matched_skills[:6] %}
+        <span class="px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 text-xs border border-brand-500/20">
+          {{ skill }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Topics -->
+      {% if repo.topics %}
+      <div class="flex flex-wrap gap-1 mb-3">
+        {% for topic in repo.topics[:5] %}
+        <span class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 text-xs">
+          {{ topic }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Contribution tips badges -->
+      {% if repo.tips %}
+      <div class="flex flex-wrap gap-2 mt-1">
+        {% for tip in repo.tips %}
+        <span class="text-xs flex items-center gap-1 px-2 py-0.5 rounded-full
+          {{ 'bg-green-900/30 text-green-400 border border-green-800' if tip.positive
+             else 'bg-yellow-900/30 text-yellow-400 border border-yellow-800' }}">
+          {{ tip.icon }} {{ tip.message }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+
+<!-- ── Issues section ────────────────────────────────────────────────────── -->
+{% if result.issues %}
+<section>
+  <h2 class="text-lg font-semibold text-white mb-4">
+    Good first issues
+    <span class="text-gray-500 font-normal text-sm">(ranked by relevance)</span>
+  </h2>
+
+  <div id="issue-list" class="space-y-3">
+    {% for issue in result.issues %}
+    <div
+      class="issue-row bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-gray-700 transition-colors"
+      data-diff="{{ issue.difficulty.value }}"
+    >
+      <div class="flex items-start justify-between gap-3">
+
+        <!-- Left: title + repo + labels -->
+        <div class="min-w-0">
+          <a
+            href="{{ issue.html_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-gray-100 hover:text-brand-400 text-sm line-clamp-2"
+          >{{ issue.title }}</a>
+
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
+            <a
+              href="{{ issue.repo_html_url }}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="hover:text-gray-300"
+            >{{ issue.repo_full_name }}</a>
+            <span>#{{ issue.number }}</span>
+            <span title="Issue age">{{ issue.age_days }}d old</span>
+            {% if issue.comment_count %}
+            <span>{{ issue.comment_count }} comments</span>
+            {% endif %}
+          </div>
+
+          <!-- Label chips -->
+          {% if issue.labels %}
+          <div class="flex flex-wrap gap-1 mt-2">
+            {% for label in issue.labels[:4] %}
+            <span class="px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 text-xs">
+              {{ label }}
+            </span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Right: difficulty badge + open button -->
+        <div class="flex flex-col items-end gap-2 shrink-0">
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium
+            {% if issue.difficulty.value == 'Beginner' %}
+              bg-green-900/40 text-green-400 border border-green-800
+            {% elif issue.difficulty.value == 'Advanced' %}
+              bg-red-900/40 text-red-400 border border-red-800
+            {% else %}
+              bg-yellow-900/40 text-yellow-400 border border-yellow-800
+            {% endif %}
+          ">{{ issue.difficulty.value }}</span>
+
+          <a
+            href="{{ issue.html_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-xs px-3 py-1 bg-gray-800 text-gray-300 rounded-lg
+                   hover:bg-gray-700 border border-gray-700 transition-colors"
+          >Open ↗</a>
+        </div>
+
+      </div>
+
+      <!-- Body preview -->
+      {% if issue.body_preview %}
+      <p class="mt-2 text-xs text-gray-500 line-clamp-2">{{ issue.body_preview }}</p>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<!-- Empty state -->
+{% if not result.repos and not result.issues %}
+<div class="text-center py-20 text-gray-500">
+  <p class="text-lg mb-2">No results found.</p>
+  <p class="text-sm mb-4">Try broadening your skills or adding a GitHub token to increase rate limits.</p>
+  <a href="/" class="underline hover:text-gray-300">Try again</a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  // ── Filter state ─────────────────────────────────────────────────────────
+  // We track a single active language and difficulty filter.
+  let activeLang = '__all__';
+  let activeDiff = '__all__';
+
+  function applyFilters() {
+    // Repos: filter by language
+    document.querySelectorAll('.repo-card').forEach(card => {
+      const lang = card.dataset.lang || '';
+      const show = activeLang === '__all__' || lang === activeLang.toLowerCase();
+      card.style.display = show ? '' : 'none';
+    });
+
+    // Issues: filter by difficulty
+    document.querySelectorAll('.issue-row').forEach(row => {
+      const diff = row.dataset.diff || '';
+      const show = activeDiff === '__all__' || diff === activeDiff;
+      row.style.display = show ? '' : 'none';
+    });
+  }
+
+  function filterLang(value, btn) {
+    activeLang = value;
+    // Update chip styles
+    document.querySelectorAll('.chip-lang').forEach(c => {
+      const isActive = (value === '__all__' && c.classList.contains('chip-all')) ||
+                       (c.textContent.trim() === btn.textContent.trim() && !c.classList.contains('chip-all') && value !== '__all__');
+      c.classList.toggle('bg-brand-500', isActive);
+      c.classList.toggle('text-white', isActive);
+      c.classList.toggle('border-brand-500', isActive);
+      c.classList.toggle('bg-gray-800', !isActive);
+      c.classList.toggle('text-gray-300', !isActive);
+      c.classList.toggle('border-gray-700', !isActive);
+    });
+    applyFilters();
+  }
+
+  function filterDiff(value, btn) {
+    activeDiff = value;
+    document.querySelectorAll('.chip-diff').forEach(c => {
+      const isActive = (value === '__all__' && c.classList.contains('chip-all')) ||
+                       (c.textContent.trim() === btn.textContent.trim() && !c.classList.contains('chip-all') && value !== '__all__');
+      c.classList.toggle('bg-brand-500', isActive);
+      c.classList.toggle('text-white', isActive);
+      c.classList.toggle('border-brand-500', isActive);
+      c.classList.toggle('bg-gray-800', !isActive);
+      c.classList.toggle('text-gray-300', !isActive);
+      c.classList.toggle('border-gray-700', !isActive);
+    });
+    applyFilters();
+  }
+</script>
+{% endblock %}

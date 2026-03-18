@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{#
+  loading.html — Progress page while the background analysis runs.
+
+  Behaviour:
+    - Displays an animated spinner and status message.
+    - JavaScript polls GET /status/{{ session_id }} every 2 seconds.
+    - When status == "done" → redirect to /results/{{ session_id }}
+    - When status == "error" → show error message inline (no full page reload).
+    - After 3 minutes of polling without completion, shows a timeout warning.
+
+  The session_id is injected by the router.
+#}
+
+{% block title %}Analysing… — ContribCompass{% endblock %}
+
+{% block content %}
+
+<div class="flex flex-col items-center justify-center min-h-[60vh] text-center gap-6">
+
+  <!-- Spinner -->
+  <div id="spinner" class="relative w-20 h-20">
+    <!-- Outer ring -->
+    <svg class="animate-spin w-20 h-20 text-brand-500" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+      <path class="opacity-90" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        d="M12 2a10 10 0 0 1 10 10"/>
+    </svg>
+    <!-- Compass needle in centre -->
+    <svg class="absolute inset-0 m-auto w-8 h-8 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" stroke-width="1.5"/>
+      <path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+  <!-- Status text -->
+  <div>
+    <h1 class="text-2xl font-bold text-white mb-2">Searching for opportunities…</h1>
+    <p id="status-msg" class="text-gray-400 text-sm">
+      Querying GitHub Search API and Up For Grabs, then ranking with semantic search.
+    </p>
+  </div>
+
+  <!-- Steps checklist (purely visual, not bound to real events) -->
+  <ul class="text-left text-sm text-gray-400 space-y-2 max-w-xs w-full">
+    <li class="flex items-center gap-2">
+      <span id="step1-icon" class="text-gray-600">○</span>
+      <span>Fetching GitHub repositories</span>
+    </li>
+    <li class="flex items-center gap-2">
+      <span id="step2-icon" class="text-gray-600">○</span>
+      <span>Fetching good first issues</span>
+    </li>
+    <li class="flex items-center gap-2">
+      <span id="step3-icon" class="text-gray-600">○</span>
+      <span>Semantic re-ranking</span>
+    </li>
+    <li class="flex items-center gap-2">
+      <span id="step4-icon" class="text-gray-600">○</span>
+      <span>Enriching top repos</span>
+    </li>
+  </ul>
+
+  <!-- Error box (hidden by default) -->
+  <div id="error-box" class="hidden w-full max-w-md rounded-lg bg-red-900/40 border
+       border-red-700 px-4 py-3 text-red-300 text-sm text-left">
+    <strong>Analysis failed:</strong>
+    <span id="error-msg"></span>
+    <div class="mt-3">
+      <a href="/" class="underline hover:text-red-200">Try again</a>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  // ── Configuration ────────────────────────────────────────────────────────
+  const SESSION_ID   = "{{ session_id }}";
+  const POLL_MS      = 2000;   // poll every 2 s
+  const TIMEOUT_MS   = 180000; // give up after 3 min
+  const RESULTS_URL  = "/results/" + SESSION_ID;
+  const STATUS_URL   = "/status/" + SESSION_ID;
+
+  // ── Step icons — animate fake progress while polling ────────────────────
+  const steps = ['step1-icon', 'step2-icon', 'step3-icon', 'step4-icon'];
+  let stepIdx = 0;
+  const stepTimer = setInterval(() => {
+    if (stepIdx < steps.length) {
+      document.getElementById(steps[stepIdx]).textContent = '✓';
+      document.getElementById(steps[stepIdx]).classList.add('text-brand-400');
+      stepIdx++;
+    }
+  }, 3000);  // tick one step every 3 s (purely cosmetic)
+
+  // ── Polling ──────────────────────────────────────────────────────────────
+  const startedAt = Date.now();
+
+  const poll = async () => {
+    // Timeout guard
+    if (Date.now() - startedAt > TIMEOUT_MS) {
+      clearInterval(stepTimer);
+      document.getElementById('status-msg').textContent =
+        'This is taking longer than expected. The server may be under load.';
+      return;
+    }
+
+    try {
+      const resp = await fetch(STATUS_URL);
+      const data = await resp.json();
+
+      if (data.status === 'done') {
+        clearInterval(stepTimer);
+        // Tick remaining steps
+        steps.forEach(s => {
+          const el = document.getElementById(s);
+          el.textContent = '✓';
+          el.classList.add('text-brand-400');
+        });
+        window.location.href = RESULTS_URL;
+        return;
+      }
+
+      if (data.status === 'error') {
+        clearInterval(stepTimer);
+        document.getElementById('spinner').classList.add('hidden');
+        const errorBox = document.getElementById('error-box');
+        document.getElementById('error-msg').textContent = data.error_message || 'Unknown error.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+
+      // Still pending / running — schedule next poll
+      setTimeout(poll, POLL_MS);
+
+    } catch (err) {
+      // Network error — retry
+      setTimeout(poll, POLL_MS * 2);
+    }
+  };
+
+  // Kick off first poll after a short delay
+  setTimeout(poll, POLL_MS);
+</script>
+{% endblock %}

@@ -1,0 +1,52 @@
+# .github/workflows/release.yml — Create a GitHub Release on version tags.
+#
+# Triggered when a tag matching "v*" (e.g. v1.0.0) is pushed to the repo.
+# The workflow builds a source distribution and uploads it as a release asset.
+#
+# Usage:
+#   git tag v1.0.0
+#   git push origin v1.0.0
+#
+# The tag message becomes the release body.  For richer release notes, edit
+# the release manually on GitHub after it is created.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"          # triggers on v1.0.0, v2.3.1-beta, etc.
+
+permissions:
+  contents: write     # needed to create GitHub Releases
+
+jobs:
+  release:
+    name: Build & publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history so the changelog is accurate
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      # Build a source distribution (sdist) — no wheel needed for a web app
+      - name: Build sdist
+        run: uv build --sdist
+
+      # Create the GitHub Release and attach the sdist as an asset
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          generate_release_notes: true   # auto-generate from commit messages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
